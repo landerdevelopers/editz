@@ -61,6 +61,11 @@ export function dropClip(id) {
   if (m) { m.video.pause(); m.video.remove(); pool.delete(id) }
 }
 
+// Tear the whole pool down — used when swapping projects.
+export function dropAll() {
+  for (const id of [...pool.keys()]) dropClip(id)
+}
+
 export function dropStale(state) {
   const live = new Set(state.clips.map((c) => c.id))
   for (const id of [...pool.keys()]) if (!live.has(id)) dropClip(id)

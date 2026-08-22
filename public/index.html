@@ -42,6 +42,12 @@
   .ddopt.on .tick { opacity:1; }
   .ddopt .sw { width:20px; height:20px; border-radius:4px; border:1px solid #4a4a56;
                flex:0 0 auto; background:#0a0a0c; }
+  .ddopt small { margin-left:auto; color:var(--dim); font-size:10.5px; }
+  .ddopt.on small { color:var(--accent); }
+  .ddsep { height:1px; background:var(--line); margin:5px 2px; }
+  #pswitch .ddbtn { padding:6px 8px; background:none; border-color:transparent; }
+  #pswitch .ddbtn:hover { background:var(--card2); }
+  #pswitch .ddbtn > span:first-child { display:none; }
 
   select, input[type=number], input[type=text] {
     background:var(--card2); border:1px solid var(--line); border-radius:8px; padding:6px 10px;
@@ -122,13 +128,16 @@
 
   /* ---------- left panel ---------- */
   #panel { width:250px; flex:0 0 auto; background:var(--card); border-radius:16px;
-           padding:14px; overflow-y:auto; }
+           padding:14px; overflow-y:auto; overflow-x:hidden; }
   #search { margin-bottom:12px; }
   #add { width:100%; background:var(--accent); color:#17171b; border-color:var(--accent);
          font-weight:600; padding:9px; margin-bottom:12px; }
   #add:hover { background:#fbf6c4; border-color:#fbf6c4; }
-  .mgrid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
-  .mitem { cursor:grab; position:relative; user-select:none; -webkit-user-select:none; }
+  /* min-width:0 everywhere: a grid item defaults to min-width:auto, so a long
+     file name refuses to shrink and pushes the whole panel into sideways scroll
+     instead of ellipsing. */
+  .mgrid { display:grid; grid-template-columns:1fr 1fr; gap:9px; min-width:0; }
+  .mitem { cursor:grab; position:relative; min-width:0; user-select:none; -webkit-user-select:none; }
   .mitem:active { cursor:grabbing; }
   .mitem img { width:100%; aspect-ratio:1; object-fit:cover; display:block; background:#000;
                border-radius:11px; border:2px solid transparent; pointer-events:none; }
@@ -145,8 +154,9 @@
   .blk.drop, .lane.drop { outline:2px dashed var(--accent); outline-offset:-2px; }
   canvas.drop { outline:3px dashed var(--accent); outline-offset:-3px; }
   body.filedrop #work { outline:2px dashed var(--accent); outline-offset:-3px; }
-  .mitem b { display:block; font-size:11px; font-weight:500; margin-top:5px;
+  .mitem b, .mitem small { display:block; min-width:0; max-width:100%;
              overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mitem b { font-size:11px; font-weight:500; margin-top:5px; }
   .mitem small { color:var(--dim); font-size:10px; }
 
   .lgrid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:9px; }
@@ -298,6 +308,7 @@
 <div id="work">
   <div id="projbar">
     <input id="pname" class="name" spellcheck="false" aria-label="Project name">
+    <span id="pswitch"></span>
     <span class="sep"></span>
     <button id="undo" class="ico" title="Undo (Cmd/Ctrl+Z)">↶</button>
     <button id="redo" class="ico" title="Redo (Cmd/Ctrl+Shift+Z)">↷</button>

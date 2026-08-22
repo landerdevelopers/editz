@@ -27,13 +27,25 @@ const newClip = (srcId, row, start, dur) => ({
 })
 
 // `grid` remembers the applied layout, so its empty slots stay valid drop targets.
-let state = { title: 'Untitled project',
-              sources: [], clips: [], out: { w: 1080, h: 1920 }, sel: null, grid: null,
-              gap: 0, pad: 0, bg: '#000000',
-              // `auto` records the last name derived from the project title, so an
-              // untouched filename keeps following it and a hand-set one doesn't.
-              xp: { name: 'edit', auto: 'edit', mode: 'quality', crf: 21, mb: 25,
-                    codec: 'libx264', speed: 'veryfast' } }
+// One factory, so a new project and a cleared project start identically.
+const BLANK = () => ({
+  id: null,
+  title: 'Untitled project',
+  sources: [],
+  clips: [],
+  out: { w: 1080, h: 1920 },
+  sel: null,
+  // `grid` remembers the applied layout, so its empty slots stay valid drop targets.
+  grid: null,
+  gap: 0,
+  pad: 0,
+  bg: '#000000',
+  // `auto` records the last name derived from the project title, so an untouched
+  // filename keeps following it and a hand-set one doesn't.
+  xp: { name: 'edit', auto: 'edit', mode: 'quality', crf: 21, mb: 25,
+        codec: 'libx264', speed: 'veryfast' },
+})
+let state = BLANK()
 let t = 0, playing = false, busy = false, tab = 'media', pps = 46, filter = ''
 let mode = 'crop' // 'crop' pans inside a clip; 'frame' moves and resizes its panel
 const undo = [], redo = []
@@ -330,8 +342,11 @@ function dropdown({ value, options, onChange, label = 'Select', wide }) {
     let active = Math.max(0, options.findIndex((o) => o.value === value))
     const items = options.map((o, i) => {
       const item = el('div', { className: 'ddopt' + (o.value === value ? ' on' : ''), role: 'option' })
+      if (o.sep) list.append(el('div', { className: 'ddsep' }))
       if (o.swatch) item.append(el('span', { className: 'sw', style: o.swatch }))
-      item.append(el('span', { textContent: o.label }), el('span', { className: 'tick', textContent: '✓' }))
+      item.append(el('span', { textContent: o.label }))
+      if (o.meta) item.append(el('small', { textContent: o.meta }))
+      item.append(el('span', { className: 'tick', textContent: '✓' }))
       item.onclick = () => { closeDD(); onChange(o.value) }
       item.onpointerenter = () => setActive(i)
       list.append(item)
@@ -629,15 +644,19 @@ function panelOutput(p) {
   })
   p.append(el('div', { className: 'hint', textContent:
     'Clips and edits are kept in this browser, so a refresh or a closed tab picks up where you left off.' }))
-  const wipe = el('button', { textContent: 'Clear saved project', style: 'margin-top:8px;width:100%' })
+  const wipe = el('button', { textContent: 'Empty this project', style: 'margin-top:8px;width:100%' })
   wipe.onclick = async () => {
-    if (!confirm('Delete every clip and edit saved in this browser?')) return
-    await store.clearProject()
+    if (!confirm(`Remove every clip from "${state.title}"? Other projects are untouched.`)) return
     for (const src of state.sources) URL.revokeObjectURL(src.url)
-    state = { title: state.title, sources: [], clips: [], out: state.out, sel: null, grid: null,
+    R.dropAll()
+    // keep id, title and look; drop only the contents
+    state = { ...BLANK(), id: state.id, title: state.title, out: state.out,
               gap: state.gap, pad: state.pad, bg: state.bg, xp: state.xp }
     undo.length = 0; redo.length = 0
-    setStatus('project cleared')
+    persist()
+    await store.gc() // release files no project references any more
+    projects = await store.listProjects()
+    setStatus('project emptied')
     ui()
   }
   p.append(wipe)
@@ -834,7 +853,7 @@ function ui() {
   canvas.height = state.out.h
   $('#undo').disabled = !undo.length
   $('#redo').disabled = !redo.length
-  drawRail(); drawPanel(); drawTimeline(); drawSizeDD(); drawName()
+  drawRail(); drawPanel(); drawTimeline(); drawSizeDD(); drawName(); drawSwitch()
   paintRanges()
 }
 
@@ -857,6 +876,72 @@ pname.onchange = () => {
   persist()
 }
 pname.onkeydown = (e) => { if (e.key === 'Enter' || e.key === 'Escape') pname.blur() }
+
+// ---- projects -----------------------------------------------------------
+// Several projects, all in IndexedDB. The picker sits beside the name.
+
+let projects = []
+
+// Swap the whole editor over to another project, releasing this one's blob URLs.
+async function openProject(id) {
+  if (id === state.id) return
+  for (const src of state.sources) URL.revokeObjectURL(src.url)
+  R.dropAll()
+  const saved = await store.loadProject(id)
+  if (!saved) return setStatus("that project could not be opened", true)
+  state = { ...BLANK(), ...saved, xp: { ...BLANK().xp, ...(saved.xp ?? {}) } }
+  undo.length = 0; redo.length = 0
+  await store.setCurrent(id)
+  normalize()
+  t = 0
+  projects = await store.listProjects()
+  ui()
+  setStatus(`opened ${state.title}`)
+}
+
+async function createProject() {
+  const id = await store.newProject('Untitled project', Date.now())
+  for (const src of state.sources) URL.revokeObjectURL(src.url)
+  R.dropAll()
+  state = { ...BLANK(), id, title: 'Untitled project' }
+  undo.length = 0; redo.length = 0
+  t = 0
+  projects = await store.listProjects()
+  ui()
+  setStatus('new project')
+}
+
+async function removeProject(id) {
+  const p = projects.find((x) => x.id === id)
+  if (!confirm(`Delete "${p?.title || 'this project'}" and its clips? This cannot be undone.`)) return
+  projects = await store.deleteProject(id)
+  if (id === state.id) {
+    const next = projects[0]?.id
+    if (next) { state.id = null; await openProject(next) }
+    else await createProject()
+  } else {
+    ui()
+  }
+  setStatus('project deleted')
+}
+
+function drawSwitch() {
+  const opts = projects.map((p) => ({
+    value: p.id,
+    label: p.title || 'Untitled project',
+    meta: `${p.clips} clip${p.clips === 1 ? '' : 's'}`,
+  }))
+  opts.push({ value: '__new', label: '+ New project', sep: true })
+  if (projects.length > 1) opts.push({ value: '__del', label: `Delete "${state.title}"` })
+  $('#pswitch').replaceChildren(dropdown({
+    value: state.id, options: opts, label: 'Projects',
+    onChange: (v) => {
+      if (v === '__new') return createProject()
+      if (v === '__del') return removeProject(state.id)
+      openProject(v)
+    },
+  }))
+}
 
 $('#file').onchange = (e) => { addFiles([...e.target.files]); e.target.value = '' }
 $('#play').onclick = () => (playing ? pause() : play())
@@ -1252,19 +1337,28 @@ $('#xgo').onclick = async () => {
   }
 }
 
-// Restore the last project before first paint, so a refresh is a no-op.
+// Boot: lift any old single-project store, then open the last project — or make
+// the first one. Runs before first paint so a refresh is a no-op.
 ;(async () => {
-  const saved = await store.loadProject().catch(() => null)
-  if (saved) {
-    state = { title: saved.title || 'Untitled project',
-              sources: saved.sources, clips: saved.clips ?? [],
-              out: saved.out ?? state.out, sel: saved.sel ?? null, grid: saved.grid ?? null,
-              gap: saved.gap ?? 0, pad: saved.pad ?? 0, bg: saved.bg ?? '#000000',
-              xp: { ...state.xp, ...(saved.xp ?? {}) } }
-    normalize() // an older project may predate the one-sequence-per-row rule
-    setStatus(saved.lost
-      ? `restored — ${saved.lost} clip(s) couldn't be recovered`
-      : `restored ${state.sources.length} clip(s)`, !!saved.lost)
+  try {
+    await store.migrate(Date.now())
+    projects = await store.listProjects()
+    const cur = (await store.currentId()) ?? projects[0]?.id
+    const saved = cur ? await store.loadProject(cur) : null
+
+    if (saved) {
+      state = { ...BLANK(), ...saved, xp: { ...BLANK().xp, ...(saved.xp ?? {}) } }
+      normalize() // an older project may predate the one-sequence-per-row rule
+      setStatus(saved.lost
+        ? `restored — ${saved.lost} clip(s) couldn't be recovered`
+        : `restored ${state.sources.length} clip(s)`, !!saved.lost)
+    } else {
+      state.id = await store.newProject(state.title, Date.now())
+      projects = await store.listProjects()
+    }
+  } catch (e) {
+    setStatus(`couldn't open the last project: ${e.message || e}`, true)
+    if (!state.id) state.id = await store.newProject(state.title, Date.now()).catch(() => null)
   }
   ui()
   requestAnimationFrame(loop)

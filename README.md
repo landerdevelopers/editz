@@ -69,6 +69,16 @@ ctx.drawImage(video, sx,sy,sw,sh,  dx,dy,dw,dh)
 //                   \_ crop _/    \_ rect _/
 ```
 
+## Projects
+
+Several projects, all in this browser, no database. The picker sits beside the
+project name: switch, create, or delete. Each is a small JSON doc in IndexedDB
+alongside the video files.
+
+Files live in one shared space keyed by source id. Sweeping unreferenced ones
+therefore unions **every** project's sources — scoping that to the open project
+would delete footage the others still need.
+
 ## Your work is kept
 
 Clips and edits survive a refresh, a closed tab, or a restart — no re-uploading.
@@ -82,7 +92,8 @@ pointing at it are emptied, so a partial store can't restore a broken timeline.
 No state library — state is one plain object with a single `mutate()` chokepoint,
 which is all a persistence layer needs to hook.
 
-**Output → Clear saved project** wipes it and frees the space.
+**Output → Empty this project** clears its clips and frees their space; other
+projects are untouched. Deleting a project is in the picker.
 
 ## Files
 
