@@ -1,0 +1,404 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>editz</title>
+<style>
+  :root {
+    --page:#0a0a0c; --card:#17171b; --card2:#1f1f25; --line:#2a2a32; --fg:#eceef2;
+    --dim:#85858f; --accent:#f2edb8; --clip:#a4d8ea; --clipink:#0e2831;
+    --track:#232329; --warn:#ffb340; --danger:#ff6b7a;
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body {
+    margin:0; padding:10px; gap:10px; display:flex; overflow:hidden;
+    background:var(--page); color:var(--fg);
+    font:13px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  button, select, input { font:inherit; color:var(--fg); }
+  button {
+    background:var(--card2); border:1px solid var(--line); border-radius:8px;
+    padding:6px 11px; cursor:pointer;
+  }
+  button:hover:not(:disabled) { background:#2a2a33; border-color:#3a3a45; }
+  button:disabled { opacity:.3; cursor:default; }
+  button.on { background:var(--accent); border-color:var(--accent); color:#17171b; font-weight:600; }
+  /* ---------- dropdown ---------- */
+  .dd { position:relative; }
+  .ddbtn { display:flex; align-items:center; gap:10px; justify-content:space-between;
+           width:100%; text-align:left; white-space:nowrap; }
+  .ddbtn .ddchev { font-size:10px; color:var(--dim); transition:transform .15s ease; }
+  .ddbtn[aria-expanded="true"] { border-color:var(--accent); }
+  .ddbtn[aria-expanded="true"] .ddchev { transform:rotate(180deg); color:var(--fg); }
+  .ddlist { position:fixed; z-index:200; background:var(--card2); border:1px solid #3a3a45;
+            border-radius:11px; padding:5px; max-height:290px; overflow-y:auto;
+            box-shadow:0 16px 40px #000000b0; }
+  .ddopt { display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:8px;
+           cursor:pointer; font-size:12.5px; }
+  .ddopt:hover, .ddopt.active { background:#31313c; }
+  .ddopt.on { color:var(--accent); font-weight:600; }
+  .ddopt .tick { margin-left:auto; opacity:0; }
+  .ddopt.on .tick { opacity:1; }
+  .ddopt .sw { width:20px; height:20px; border-radius:4px; border:1px solid #4a4a56;
+               flex:0 0 auto; background:#0a0a0c; }
+
+  select, input[type=number], input[type=text] {
+    background:var(--card2); border:1px solid var(--line); border-radius:8px; padding:6px 10px;
+    width:100%;
+  }
+  /* ---- fill slider: label · filled bar · number box ---- */
+  .ctl { display:flex; align-items:center; gap:8px; margin:8px 0; }
+  .ctl-label { flex:0 0 auto; font-size:12px; color:var(--fg); }
+  .ctl .fslider { flex:1; min-width:0; height:32px; }
+  .ctl-num { flex:0 0 52px; width:52px; text-align:center; padding:7px 4px;
+             font-variant-numeric:tabular-nums; -moz-appearance:textfield; }
+  .ctl-num::-webkit-outer-spin-button, .ctl-num::-webkit-inner-spin-button {
+    -webkit-appearance:none; margin:0; }
+
+  input[type=range].fslider {
+    border-radius:9px; height:32px;
+    background:linear-gradient(to right, #55555f 0 var(--p,0), #2b2b34 var(--p,0) 100%);
+  }
+  input[type=range].fslider::-webkit-slider-runnable-track { height:32px; background:none; }
+  input[type=range].fslider::-webkit-slider-thumb {
+    width:6px; height:24px; margin-top:4px; border-radius:3px;
+    background:#dcdce2; box-shadow:none;
+  }
+  input[type=range].fslider:hover::-webkit-slider-thumb { transform:none; background:#fff; }
+  input[type=range].fslider:active::-webkit-slider-thumb { transform:none; background:#fff; }
+  input[type=range].fslider::-moz-range-track { height:32px; background:none; }
+  input[type=range].fslider::-moz-range-progress { height:0; }
+  input[type=range].fslider::-moz-range-thumb {
+    width:6px; height:24px; border-radius:3px; background:#dcdce2; box-shadow:none; }
+
+  /* Custom track so the filled portion can be styled; --p is the fill offset in px
+     (not %), so the fill edge lands exactly under the thumb centre — a percentage
+     drifts because the thumb only travels width-minus-its-own-width. */
+  input[type=range] {
+    -webkit-appearance:none; appearance:none; width:100%; height:18px;
+    background:transparent; cursor:pointer; touch-action:none;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height:5px; border-radius:999px;
+    background:linear-gradient(to right, var(--clip) 0 var(--p,0%), #34343f var(--p,0%) 100%);
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance:none; appearance:none; width:15px; height:15px; margin-top:-5px;
+    border-radius:50%; background:#fff; border:none; box-shadow:0 1px 5px #0009;
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  input[type=range]:hover::-webkit-slider-thumb { transform:scale(1.18); }
+  input[type=range]:active::-webkit-slider-thumb { transform:scale(1.3); box-shadow:0 2px 9px #000b; }
+  input[type=range]:focus-visible::-webkit-slider-thumb { outline:2px solid var(--accent); outline-offset:2px; }
+  input[type=range]::-moz-range-track { height:5px; border-radius:999px; background:#34343f; }
+  input[type=range]::-moz-range-progress { height:5px; border-radius:999px; background:var(--clip); }
+  input[type=range]::-moz-range-thumb {
+    width:15px; height:15px; border-radius:50%; background:#fff; border:none;
+    box-shadow:0 1px 5px #0009; transition:transform .12s ease;
+  }
+  input[type=range]:active::-moz-range-thumb { transform:scale(1.3); }
+  label { display:block; color:var(--dim); margin:14px 0 5px; font-size:10px;
+          text-transform:uppercase; letter-spacing:.09em; font-weight:700; }
+  ::-webkit-scrollbar { height:8px; width:8px; }
+  ::-webkit-scrollbar-thumb { background:#33333d; border-radius:4px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  .grow { flex:1; }
+  .hint { color:var(--dim); font-size:11px; margin-top:10px; line-height:1.55; }
+  .hint.warn { color:var(--warn); }
+
+  /* ---------- rail ---------- */
+  #rail { width:74px; flex:0 0 auto; display:flex; flex-direction:column; align-items:center;
+          gap:6px; padding-top:52px; }
+  #rail .logo { position:absolute; top:16px; left:14px; font-weight:800; font-size:15px;
+                letter-spacing:-.02em; }
+  #rail button { width:56px; height:56px; padding:0; background:none; border:1px solid transparent;
+                 border-radius:14px; display:flex; flex-direction:column; align-items:center;
+                 justify-content:center; gap:4px; color:var(--dim); font-size:9px;
+                 text-transform:uppercase; letter-spacing:.05em; font-weight:600; }
+  #rail button svg { width:20px; height:20px; }
+  #rail button:hover { color:var(--fg); background:var(--card); }
+  #rail button.on { background:var(--accent); color:#17171b; border-color:var(--accent); }
+
+  /* ---------- left panel ---------- */
+  #panel { width:250px; flex:0 0 auto; background:var(--card); border-radius:16px;
+           padding:14px; overflow-y:auto; }
+  #search { margin-bottom:12px; }
+  #add { width:100%; background:var(--accent); color:#17171b; border-color:var(--accent);
+         font-weight:600; padding:9px; margin-bottom:12px; }
+  #add:hover { background:#fbf6c4; border-color:#fbf6c4; }
+  .mgrid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+  .mitem { cursor:grab; position:relative; }
+  .mitem:active { cursor:grabbing; }
+  .mitem img { width:100%; aspect-ratio:1; object-fit:cover; display:block; background:#000;
+               border-radius:11px; border:2px solid transparent; pointer-events:none; }
+  .mitem:hover img { border-color:var(--clip); }
+  .madd { position:absolute; top:6px; right:6px; width:26px; height:26px; padding:0;
+          border-radius:50%; background:#000000b0; border:1px solid #ffffff40; color:#fff;
+          display:flex; align-items:center; justify-content:center; font-size:17px;
+          line-height:1; backdrop-filter:blur(4px); }
+  .madd:hover { background:var(--accent); border-color:var(--accent); color:#17171b; }
+
+  /* drop targets */
+  .blk.drop, .lane.drop { outline:2px dashed var(--accent); outline-offset:-2px; }
+  canvas.drop { outline:3px dashed var(--accent); outline-offset:-3px; }
+  body.filedrop #work { outline:2px dashed var(--accent); outline-offset:-3px; }
+  .mitem b { display:block; font-size:11px; font-weight:500; margin-top:5px;
+             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mitem small { color:var(--dim); font-size:10px; }
+
+  .lgrid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:9px; }
+  .litem { cursor:pointer; text-align:center; font-size:10px; color:var(--dim); }
+  .lico { position:relative; width:100%; background:#000; border-radius:8px;
+          border:2px solid var(--line); overflow:hidden; }
+  .litem:hover .lico { border-color:#45454f; }
+  .litem.on .lico { border-color:var(--accent); }
+  .litem.on { color:var(--fg); }
+  .lico i { position:absolute; background:#3f4350; outline:1px solid #0a0a0c; }
+  .litem.on .lico i { background:var(--accent); }
+
+  /* ---------- work card ---------- */
+  #work { flex:1; min-width:0; background:var(--card); border-radius:16px;
+          display:flex; flex-direction:column; overflow:hidden; }
+  #projbar { display:flex; gap:10px; align-items:center; padding:11px 14px; flex:0 0 auto; }
+  /* An input rather than contenteditable: no rich-text paste, no stray markup,
+     and the value round-trips as a plain string. */
+  #projbar .name {
+    font-weight:600; font-size:14px; letter-spacing:.01em; font-family:inherit;
+    background:none; border:1px solid transparent; border-radius:7px;
+    padding:5px 8px; width:auto; min-width:60px; max-width:38ch; color:var(--fg);
+  }
+  #projbar .name:hover { background:var(--card2); }
+  #projbar .name:focus { background:var(--card2); border-color:var(--accent); outline:none; }
+  #projbar .sep { width:1px; height:20px; background:var(--line); }
+  .ico { padding:6px 9px; line-height:1; background:none; border-color:transparent; }
+  .ico:hover:not(:disabled) { background:var(--card2); }
+  #go { background:#f4f4f6; color:#17171b; border-color:#f4f4f6; font-weight:600; padding:7px 16px; }
+  #go:hover:not(:disabled) { background:#fff; border-color:#fff; }
+  #status { color:var(--dim); font-size:11.5px; max-width:34ch; overflow:hidden;
+            text-overflow:ellipsis; white-space:nowrap; }
+  #status.err { color:var(--danger); }
+  #status a { color:var(--clip); font-weight:600; }
+
+  #stage { flex:1; min-height:0; display:flex; align-items:center; justify-content:center;
+           padding:0 14px; }
+  canvas { max-width:100%; max-height:100%; background:#000; border-radius:10px;
+           cursor:grab; touch-action:none; }
+  canvas:active { cursor:grabbing; }
+
+  #transport { display:flex; align-items:center; gap:10px; padding:10px 14px; flex:0 0 auto; }
+  #transport .tc { font-variant-numeric:tabular-nums; font-size:13px; letter-spacing:.02em; }
+  #transport .tc small { color:var(--dim); }
+  #play { width:32px; height:32px; padding:0; border-radius:50%; }
+  .modes { display:inline-flex; background:var(--card2); border:1px solid var(--line);
+           border-radius:9px; padding:2px; gap:2px; }
+  .modes button { padding:4px 12px; font-size:11.5px; border:none; background:none;
+                  border-radius:7px; color:var(--dim); }
+  .modes button.on { background:var(--accent); color:#17171b; font-weight:600; }
+  .modes button:hover:not(.on) { background:#2a2a33; color:var(--fg); }
+  #zoom { width:120px; }
+
+  /* ---------- timeline ---------- */
+  /* Height follows the lane count until the grip is dragged, then it's explicit. */
+  #tl { flex:0 0 auto; max-height:48vh; min-height:0; display:flex; flex-direction:column; }
+  #grip { flex:0 0 auto; height:9px; cursor:ns-resize; position:relative;
+          border-top:1px solid var(--line); touch-action:none; }
+  #grip::after { content:''; position:absolute; left:50%; top:3px; transform:translateX(-50%);
+                 width:48px; height:3px; border-radius:2px; background:#3d3d48;
+                 transition:background .12s; }
+  #grip:hover::after, #grip.on::after { background:var(--accent); }
+  #tlbar { display:flex; gap:6px; align-items:center; padding:8px 14px; flex:0 0 auto; }
+  #tlbar button { padding:5px 11px; font-size:12px; }
+  #tlbody { flex:1; display:flex; min-height:0; }
+  #heads { width:44px; flex:0 0 auto; padding-left:10px; overflow:hidden; }
+  #headsin { will-change:transform; }
+  #scroll { flex:1; overflow:auto; position:relative; padding-right:14px; }
+  #inner { position:relative; min-width:100%; }
+
+  #ruler { height:26px; position:relative; cursor:pointer; user-select:none; margin-bottom:5px; }
+  #ruler .tick { position:absolute; top:0; font-size:10px; color:var(--dim); padding-left:5px;
+                 border-left:1px solid var(--line); height:26px; line-height:26px; }
+
+  .rowh { height:44px; display:flex; align-items:center; justify-content:center; margin-bottom:6px; }
+  .rowh button { background:none; border:none; padding:4px; color:var(--dim); font-size:14px; }
+  .rowh button.on { color:var(--warn); }
+  .lane { height:44px; position:relative; background:var(--track); border-radius:9px;
+          margin-bottom:6px; }
+  /* trailing drop zone: drop here to give a segment another row */
+  .lane.ghost { background:transparent; border:1.5px dashed #30303a; display:flex;
+                align-items:center; justify-content:center; color:#55555f; font-size:11px; }
+  .lane.ghost.drop { border-color:var(--accent); color:var(--accent); background:#f2edb814; }
+  .blk { position:absolute; top:3px; bottom:3px; border-radius:7px; cursor:grab;
+         touch-action:none; user-select:none;
+         display:flex; align-items:center; padding:0 16px; font-size:11px; font-weight:600;
+         white-space:nowrap; overflow:hidden; color:var(--clipink);
+         background:var(--clip) center/auto 100% repeat-x; border:2px solid transparent;
+         /* without this the clip colour paints under the transparent border and
+            leaves a blue sliver around every unselected clip */
+         background-clip:padding-box; }
+  .blk .lbl { position:relative; z-index:1; background:#a4d8eae0; padding:2px 7px;
+              border-radius:5px; overflow:hidden; text-overflow:ellipsis; }
+  .blk.on { border-color:#fff; }
+  .blk.dragging { opacity:.75; cursor:grabbing; z-index:4; }
+  /* clips holding a grid slot are marked; everything else is a plain full-frame layer */
+  .blk.ingrid { box-shadow:inset 0 0 0 2px #f2edb866; }
+  .blk .slot { position:absolute; top:4px; right:5px; z-index:2; background:var(--accent);
+               color:#17171b; font-size:9px; font-weight:800; line-height:1;
+               border-radius:4px; padding:2px 5px; letter-spacing:.03em; }
+  .blk.on .slot { right:22px; }
+  .blk.empty { background:#1c1c22; border:1.5px dashed #35353f; color:var(--dim); font-weight:400;
+               justify-content:center; }
+  /* Trim grips only appear on the selected clip, so a full row stays readable. */
+  .blk .g { position:absolute; top:0; bottom:0; width:17px; background:#7fc4dc;
+            display:none; align-items:center; justify-content:center; font-size:12px;
+            color:var(--clipink); z-index:3; cursor:ew-resize; touch-action:none; }
+  .blk .g:hover { background:#fff; }
+  .blk.on .g { display:flex; }
+  .blk .g.l { left:0; border-radius:5px 0 0 5px; } .blk .g.r { right:0; border-radius:0 5px 5px 0; }
+
+  #head { position:absolute; top:0; bottom:0; width:2px; background:#fff; z-index:6;
+          pointer-events:none; border-radius:1px; }
+  #head::before { content:''; position:absolute; top:0; left:-4px; width:10px; height:10px;
+                  background:#fff; border-radius:2px; }
+  #pool { display:none; }
+
+  /* ---------- export dialog ---------- */
+  #xdlg { border:1px solid var(--line); border-radius:16px; background:var(--card);
+          color:var(--fg); padding:0; width:min(420px, 92vw); }
+  #xdlg::backdrop { background:#000000b0; backdrop-filter:blur(3px); }
+  #xdlg > div { padding:18px 20px 20px; }
+  #xdlg .bar { height:6px; border-radius:999px; background:#2a2a33; overflow:hidden; margin-top:10px; }
+  #xdlg .bar i { display:block; height:100%; width:0; border-radius:999px; background:var(--clip);
+                 transition:width .12s linear; }
+  #xdlg .bar.busy i { width:35%; animation:slide 1.1s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left:-35%; } 100% { margin-left:100%; } }
+  #xvid { width:100%; border-radius:10px; background:#000; display:block; max-height:46vh; }
+  #xdlg a.primary { display:flex; align-items:center; justify-content:center; text-decoration:none;
+                    border-radius:8px; border:1px solid var(--accent); }
+  #xdlg h2 { margin:0 0 4px; font-size:17px; letter-spacing:-.01em; }
+  #xdlg .ends { display:flex; justify-content:space-between; color:var(--dim);
+                font-size:10px; margin-top:2px; }
+  #xdlg .row { display:flex; gap:8px; margin-top:18px; }
+  #xdlg .row button { flex:1; padding:9px; }
+  #xdlg .row .primary { background:var(--accent); border-color:var(--accent);
+                        color:#17171b; font-weight:700; }
+  .seg { display:flex; gap:4px; background:var(--card2); border:1px solid var(--line);
+         border-radius:9px; padding:3px; }
+  .seg button { flex:1; padding:6px 8px; font-size:11.5px; border:none; background:none;
+                border-radius:7px; color:var(--dim); white-space:nowrap; }
+  .seg button.on { background:var(--accent); color:#17171b; font-weight:600; }
+  .seg button:hover:not(.on) { background:#2a2a33; color:var(--fg); }
+</style>
+
+<div id="rail"><span class="logo">editz</span></div>
+<div id="panel"></div>
+
+<div id="work">
+  <div id="projbar">
+    <input id="pname" class="name" spellcheck="false" aria-label="Project name">
+    <span class="sep"></span>
+    <button id="undo" class="ico" title="Undo (Cmd/Ctrl+Z)">↶</button>
+    <button id="redo" class="ico" title="Redo (Cmd/Ctrl+Shift+Z)">↷</button>
+    <span class="grow"></span>
+    <span id="status"></span>
+    <span id="sizedd"></span>
+    <button id="go">Export</button>
+  </div>
+
+  <div id="stage"><canvas id="canvas"></canvas></div>
+
+  <div id="transport">
+    <span class="modes">
+      <button id="mcrop" class="on" title="Drag the preview to pan inside a clip">Crop</button>
+      <button id="mframe" title="Drag to move and resize a clip's panel">Frame</button>
+    </span>
+    <span class="grow"></span>
+    <button id="play">▶</button>
+    <span class="tc"><span id="tnow">00:00:00</span> <small>/ <span id="ttot">00:00:00</span></small></span>
+    <span class="grow"></span>
+    <span style="color:var(--dim);font-size:11px">Zoom</span>
+    <input id="zoom" type="range" min="12" max="200" step="1" value="46">
+  </div>
+
+  <div id="grip" title="Drag to resize · double-click to reset"></div>
+  <div id="tl">
+    <div id="tlbar">
+      <button id="split" title="Split the selected clip at the playhead">Split</button>
+      <button id="dup" title="Duplicate the selected clip">Duplicate</button>
+      <button id="del" title="Delete the selected clip (Del)">Delete</button>
+      <span class="grow"></span>
+      <span class="hint" style="margin:0" id="tlnote"></span>
+    </div>
+    <div id="tlbody">
+      <div id="heads"><div id="headsin"></div></div>
+      <div id="scroll"><div id="inner">
+        <div id="ruler"></div>
+          <div id="lanes"></div>
+        <div id="head"></div>
+      </div></div>
+    </div>
+  </div>
+</div>
+<input id="file" type="file" accept="video/*" multiple hidden>
+<dialog id="xdlg">
+  <div id="xset">
+    <h2>Export</h2>
+    <label>File name</label>
+    <input id="xname" type="text" spellcheck="false">
+
+    <label>Compress by</label>
+    <div class="seg" id="xmode">
+      <button type="button" value="quality">Target quality</button>
+      <button type="button" value="size">Target file size</button>
+    </div>
+
+    <div id="xqual">
+      <label id="xcrflab">Quality</label>
+      <input id="xcrf" type="range" min="18" max="35" step="1">
+      <div class="ends"><span>Best · larger</span><span>Smaller</span></div>
+    </div>
+
+    <div id="xsize" hidden>
+      <label>Target size (MB)</label>
+      <input id="xmb" type="number" min="1" max="10240" step="1">
+    </div>
+
+    <label>Codec</label>
+    <div class="seg" id="xcodec">
+      <button type="button" value="libx264">H.264 · most compatible</button>
+      <button type="button" value="libx265">H.265 · smaller</button>
+    </div>
+
+    <label>Encoder effort</label>
+    <div class="seg" id="xspeed">
+      <button type="button" value="veryfast">Fast</button>
+      <button type="button" value="medium">Balanced</button>
+      <button type="button" value="slow">Best</button>
+    </div>
+
+    <p class="hint" id="xnote"></p>
+    <div class="row">
+      <button type="button" id="xcancel">Cancel</button>
+      <button type="button" id="xgo" class="primary">Start export</button>
+    </div>
+  </div>
+
+  <div id="xwork" hidden>
+    <h2 id="xtitle">Recording</h2>
+    <p class="hint" id="xstage"></p>
+    <div class="bar"><i id="xbar"></i></div>
+    <p class="hint" id="xwarn">Keep this tab visible — the timeline is captured in realtime.</p>
+  </div>
+
+  <div id="xdone" hidden>
+    <h2>Export ready</h2>
+    <video id="xvid" controls playsinline></video>
+    <p class="hint" id="xstats"></p>
+    <div class="row">
+      <button type="button" id="xagain">Export again</button>
+      <a id="xdl" class="primary" download>Download</a>
+    </div>
+  </div>
+</dialog>
+<div id="pool"></div>
+<script type="module" src="./app.js"></script>
