@@ -432,15 +432,73 @@ function drawSizeDD() {
   }))
 }
 
+// What's new. Bump RELEASE when adding an entry; the badge returns for everyone
+// who hasn't opened the list since.
+const RELEASE = '2026-08-22'
+const WHATS_NEW = [
+  { icon: 'projects', title: 'Several projects',
+    body: 'Keep more than one edit on the go. Open, duplicate or delete them from Projects — a copy costs no extra space.' },
+  { icon: 'save', title: 'Everything saves itself',
+    body: 'Clips and edits live in this browser, so a refresh or a closed tab picks up where you left off. No re-uploading.' },
+  { icon: 'image', title: 'Background image',
+    body: 'Put a picture behind the grid, or pick a colour. Output → Background.' },
+  { icon: 'crop', title: 'Rounded corners',
+    body: 'Soften every panel at once with Output → Corners, alongside gap and padding.' },
+  { icon: 'layers', title: 'Clips move freely',
+    body: 'Drag clips anywhere across rows. They can overlap by any amount, and row 1 sits on top.' },
+  { icon: 'output', title: 'Export presets',
+    body: 'Choose quality or a target file size, preview the result in the dialog, then download.' },
+  { icon: 'wand', title: 'Faster preview',
+    body: 'Only the clips near the playhead are decoded, so long timelines of large recordings stay smooth.' },
+]
+
+const seenKey = 'editz:whatsnew'
+const hasUnseen = () => {
+  try { return localStorage.getItem(seenKey) !== RELEASE } catch { return false }
+}
+const markSeen = () => { try { localStorage.setItem(seenKey, RELEASE) } catch {} }
+
+function openWhatsNew() {
+  const list = $('#nlist')
+  list.replaceChildren()
+  for (const item of WHATS_NEW) {
+    const ic = el('div', { className: 'ic' })
+    ic.innerHTML = icon(item.icon, 17)
+    list.append(el('div', { className: 'nitem' }, [
+      ic,
+      el('div', {}, [el('b', { textContent: item.title }),
+                     el('small', { textContent: item.body })]),
+    ]))
+  }
+  $('#ndlg').showModal()
+  markSeen()
+  drawRail() // clears the badge
+}
+
 function drawRail() {
   const rail = $('#rail')
-  rail.replaceChildren(el('span', { className: 'logo', textContent: 'editz' }))
+  const logo = el('span', { className: 'logo' })
+  const mark = el('span', { className: 'mark' })
+  mark.innerHTML =
+    '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">' +
+    '<rect x="1.5" y="3.5" width="21" height="17" rx="5.5" fill="var(--accent)"/>' +
+    '<path d="M9.8 8.9v6.2l5.4-3.1z" fill="#17171b"/></svg>'
+  logo.append(mark, el('span', { textContent: 'editz' }))
+  rail.replaceChildren(logo)
+
   for (const [key, label] of TABS) {
     const b = el('button', { className: tab === key ? 'on' : '', title: label })
     b.innerHTML = icon(key, 20) + `<span>${label}</span>`
     b.onclick = () => { tab = key; drawRail(); drawPanel() }
     rail.append(b)
   }
+
+  rail.append(el('div', { className: 'spacer' }))
+  const info = el('button', { id: 'info', title: "What's new" })
+  info.innerHTML = icon('info', 20) + '<span>New</span>'
+  if (hasUnseen()) info.append(el('span', { className: 'dot' }))
+  info.onclick = openWhatsNew
+  rail.append(info)
 }
 
 // How long ago, in the roughest units that still say something useful.
@@ -1382,6 +1440,10 @@ $('#xcrf').oninput = () => {
 }
 $('#xmb').oninput = () => { state.xp.mb = +$('#xmb').value }
 $('#xcancel').onclick = () => $('#xdlg').close()
+$('#nclose').innerHTML = icon('x', 17)
+$('#nclose').onclick = () => $('#ndlg').close()
+$('#nok').onclick = () => $('#ndlg').close()
+
 $('#xclose').innerHTML = icon('x', 17)
 $('#xclose').onclick = () => { if (!busy) $('#xdlg').close() }
 $('#xagain').onclick = () => { pane('xset'); drawDialog() }

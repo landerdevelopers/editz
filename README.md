@@ -186,6 +186,14 @@ comfortable. If either becomes a problem the fix is to replace `exportVideo()` i
 which is frame-exact and faster than realtime. Export is deliberately a single
 function so that swap stays cheap.
 
+## What's new
+
+The **New** button at the foot of the rail lists recent additions, with a dot
+until it has been opened. Add an entry to `WHATS_NEW` in `public/app.js` and bump
+`RELEASE` beside it — the dot then returns for everyone who hasn't looked since.
+The seen flag is one string in `localStorage`; it isn't project data, so it has no
+business in the project store.
+
 ## Credits
 
 Icons from [Lucide](https://lucide.dev) — ISC License, © Lucide Icons and
