@@ -2,6 +2,7 @@ import { LAYOUTS } from './layouts.js'
 import * as R from './render.js'
 import * as store from './store.js'
 import { separateRows, freeStart, rowLimits } from './arrange.js'
+import { icon, iconEl } from './icons.js'
 
 const $ = (s) => document.querySelector(s)
 const canvas = $('#canvas')
@@ -27,13 +28,27 @@ const newClip = (srcId, row, start, dur) => ({
 })
 
 // `grid` remembers the applied layout, so its empty slots stay valid drop targets.
-let state = { title: 'Untitled project',
-              sources: [], clips: [], out: { w: 1080, h: 1920 }, sel: null, grid: null,
-              gap: 0, pad: 0, bg: '#000000',
-              // `auto` records the last name derived from the project title, so an
-              // untouched filename keeps following it and a hand-set one doesn't.
-              xp: { name: 'edit', auto: 'edit', mode: 'quality', crf: 21, mb: 25,
-                    codec: 'libx264', speed: 'veryfast' } }
+// One factory, so a new project and a cleared project start identically.
+const BLANK = () => ({
+  id: null,
+  title: 'Untitled project',
+  sources: [],
+  clips: [],
+  out: { w: 1080, h: 1920 },
+  sel: null,
+  // `grid` remembers the applied layout, so its empty slots stay valid drop targets.
+  grid: null,
+  gap: 0,
+  pad: 0,
+  radius: 0,
+  bg: '#000000',
+  bgImg: null, // id of a backdrop image in the file store
+  // `auto` records the last name derived from the project title, so an untouched
+  // filename keeps following it and a hand-set one doesn't.
+  xp: { name: 'edit', auto: 'edit', mode: 'quality', crf: 21, mb: 25,
+        codec: 'libx264', speed: 'veryfast' },
+})
+let state = BLANK()
 let t = 0, playing = false, busy = false, tab = 'media', pps = 46, filter = ''
 let mode = 'crop' // 'crop' pans inside a clip; 'frame' moves and resizes its panel
 const undo = [], redo = []
@@ -172,7 +187,10 @@ async function removeSource(id) {
     if (!state.clips.some((c) => c.id === state.sel)) state.sel = state.clips[0]?.id ?? null
   })
   URL.revokeObjectURL(src.url)
-  await store.forgetFile(id).catch(() => {}) // free the bytes now, not at next load
+  // Not forgetFile: a duplicated project may share this file. Write the doc first
+  // so the sweep sees the removal, then let gc decide whether anyone still wants it.
+  await store.flush(state).then(() => store.gc()).catch(() => {})
+  projects = await store.listProjects()
   setStatus(`removed ${src.name}${used ? ` and ${used} clip(s)` : ''}`)
 }
 
@@ -271,9 +289,9 @@ async function play() {
   await R.resume()
   if (t >= R.totalDur(state) - 0.01) await seek(0)
   playing = true
-  $('#play').textContent = '❚❚'
+  $('#play').innerHTML = icon('pause', 16)
 }
-function pause() { playing = false; $('#play').textContent = '▶' }
+function pause() { playing = false; $('#play').innerHTML = icon('play', 16) }
 
 async function seek(to) {
   t = clamp(to, 0, R.totalDur(state))
@@ -318,8 +336,10 @@ function dropdown({ value, options, onChange, label = 'Select', wide }) {
   const cur = options.find((o) => o.value === value)
   const btn = el('button', { className: 'ddbtn', type: 'button' })
   btn.setAttribute('aria-expanded', 'false')
-  btn.append(el('span', { textContent: cur ? cur.label : label }),
-             el('i', { className: 'ddchev', textContent: '▼' }))
+  btn.append(el('span', { textContent: cur ? cur.label : label }))
+  const chev = el('i', { className: 'ddchev' })
+  chev.innerHTML = icon('chevron', 14)
+  btn.append(chev)
   const wrap = el('div', { className: 'dd' }, [btn])
   if (wide) wrap.style.width = '100%'
 
@@ -330,8 +350,11 @@ function dropdown({ value, options, onChange, label = 'Select', wide }) {
     let active = Math.max(0, options.findIndex((o) => o.value === value))
     const items = options.map((o, i) => {
       const item = el('div', { className: 'ddopt' + (o.value === value ? ' on' : ''), role: 'option' })
+      if (o.sep) list.append(el('div', { className: 'ddsep' }))
       if (o.swatch) item.append(el('span', { className: 'sw', style: o.swatch }))
-      item.append(el('span', { textContent: o.label }), el('span', { className: 'tick', textContent: '✓' }))
+      item.append(el('span', { textContent: o.label }))
+      if (o.meta) item.append(el('small', { textContent: o.meta }))
+      item.append(el('span', { className: 'tick', textContent: '✓' }))
       item.onclick = () => { closeDD(); onChange(o.value) }
       item.onpointerenter = () => setActive(i)
       list.append(item)
@@ -378,12 +401,6 @@ function dropdown({ value, options, onChange, label = 'Select', wide }) {
   return wrap
 }
 
-const ICONS = {
-  media: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="m10 9.5 5 2.5-5 2.5z" fill="currentColor" stroke="none"/></svg>',
-  layout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 3v18M3 12h18"/></svg>',
-  adjust: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>',
-  output: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15V3m0 0L8 7m4-4 4 4"/><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/></svg>',
-}
 
 function layoutIcon(name) {
   const box = el('div', { className: 'lico' })
@@ -396,7 +413,8 @@ function layoutIcon(name) {
 
 // ---- rail + panels ------------------------------------------------------
 
-const TABS = [['media', 'Media'], ['layout', 'Grid'], ['adjust', 'Adjust'], ['output', 'Output']]
+const TABS = [['projects', 'Projects'], ['media', 'Media'], ['layout', 'Grid'],
+              ['adjust', 'Adjust'], ['output', 'Output']]
 const SIZES = [
   { value: '1080x1920', label: 'Vertical · 1080×1920', swatch: 'aspect-ratio:9/16;height:18px;width:auto' },
   { value: '1080x1080', label: 'Square · 1080×1080', swatch: 'aspect-ratio:1;height:18px;width:auto' },
@@ -414,15 +432,138 @@ function drawSizeDD() {
   }))
 }
 
+// What's new. Bump RELEASE when adding an entry; the badge returns for everyone
+// who hasn't opened the list since.
+const RELEASE = '2026-08-22'
+const WHATS_NEW = [
+  { icon: 'projects', title: 'Several projects',
+    body: 'Keep more than one edit on the go. Open, duplicate or delete them from Projects — a copy costs no extra space.' },
+  { icon: 'save', title: 'Everything saves itself',
+    body: 'Clips and edits live in this browser, so a refresh or a closed tab picks up where you left off. No re-uploading.' },
+  { icon: 'image', title: 'Background image',
+    body: 'Put a picture behind the grid, or pick a colour. Output → Background.' },
+  { icon: 'crop', title: 'Rounded corners',
+    body: 'Soften every panel at once with Output → Corners, alongside gap and padding.' },
+  { icon: 'layers', title: 'Clips move freely',
+    body: 'Drag clips anywhere across rows. They can overlap by any amount, and row 1 sits on top.' },
+  { icon: 'output', title: 'Export presets',
+    body: 'Choose quality or a target file size, preview the result in the dialog, then download.' },
+  { icon: 'wand', title: 'Faster preview',
+    body: 'Only the clips near the playhead are decoded, so long timelines of large recordings stay smooth.' },
+]
+
+const seenKey = 'editz:whatsnew'
+const hasUnseen = () => {
+  try { return localStorage.getItem(seenKey) !== RELEASE } catch { return false }
+}
+const markSeen = () => { try { localStorage.setItem(seenKey, RELEASE) } catch {} }
+
+function openWhatsNew() {
+  const list = $('#nlist')
+  list.replaceChildren()
+  for (const item of WHATS_NEW) {
+    const ic = el('div', { className: 'ic' })
+    ic.innerHTML = icon(item.icon, 17)
+    list.append(el('div', { className: 'nitem' }, [
+      ic,
+      el('div', {}, [el('b', { textContent: item.title }),
+                     el('small', { textContent: item.body })]),
+    ]))
+  }
+  $('#ndlg').showModal()
+  markSeen()
+  drawRail() // clears the badge
+}
+
 function drawRail() {
   const rail = $('#rail')
-  rail.replaceChildren(el('span', { className: 'logo', textContent: 'editz' }))
+  const logo = el('span', { className: 'logo' })
+  const mark = el('span', { className: 'mark' })
+  mark.innerHTML =
+    '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">' +
+    '<rect x="1.5" y="3.5" width="21" height="17" rx="5.5" fill="var(--accent)"/>' +
+    '<path d="M9.8 8.9v6.2l5.4-3.1z" fill="#17171b"/></svg>'
+  logo.append(mark, el('span', { textContent: 'editz' }))
+  rail.replaceChildren(logo)
+
   for (const [key, label] of TABS) {
     const b = el('button', { className: tab === key ? 'on' : '', title: label })
-    b.innerHTML = ICONS[key] + `<span>${label}</span>`
+    b.innerHTML = icon(key, 20) + `<span>${label}</span>`
     b.onclick = () => { tab = key; drawRail(); drawPanel() }
     rail.append(b)
   }
+
+  rail.append(el('div', { className: 'spacer' }))
+  const info = el('button', { id: 'info', title: "What's new" })
+  info.innerHTML = icon('info', 20) + '<span>New</span>'
+  if (hasUnseen()) info.append(el('span', { className: 'dot' }))
+  info.onclick = openWhatsNew
+  rail.append(info)
+}
+
+// How long ago, in the roughest units that still say something useful.
+function ago(ms) {
+  if (!ms) return 'never opened'
+  const s = Math.max(0, (Date.now() - ms) / 1000)
+  if (s < 90) return 'just now'
+  const m = s / 60
+  if (m < 60) return `${Math.round(m)} min ago`
+  const h = m / 60
+  if (h < 24) return `${Math.round(h)}h ago`
+  return `${Math.round(h / 24)}d ago`
+}
+
+function panelProjects(p) {
+  p.append(el('label', { textContent: 'Projects' }))
+  const add = el('button', { id: 'add', textContent: '+ New project' })
+  add.onclick = createProject
+  p.append(add)
+
+  if (!projects.length) {
+    p.append(el('div', { className: 'hint', textContent: 'No saved projects yet.' }))
+    return
+  }
+
+  for (const pr of projects) {
+    const here = pr.id === state.id
+    const acts = el('div', { className: 'acts' })
+
+    const dup = el('button', { title: `Duplicate ${pr.title}` })
+    dup.innerHTML = icon('copy', 15)
+    dup.onclick = async (e) => {
+      e.stopPropagation()
+      if (here) await store.flush(state) // copy what's on screen, not the last save
+      const id = await store.duplicateProject(pr.id, `${pr.title} copy`, Date.now())
+      projects = await store.listProjects()
+      ui()
+      setStatus(`duplicated to "${pr.title} copy"`)
+      return id
+    }
+
+    const rm = el('button', { className: 'danger', title: `Delete ${pr.title}` })
+    rm.innerHTML = icon('trash', 15)
+    rm.onclick = (e) => { e.stopPropagation(); removeProject(pr.id) }
+
+    acts.append(dup)
+    if (projects.length > 1) acts.append(rm)
+
+    const card = el('div', { className: 'pcard' + (here ? ' on' : '') }, [
+      iconEl(here ? 'media' : 'projects', 17),
+      el('div', { className: 'grow' }, [
+        el('b', { textContent: pr.title || 'Untitled project' }),
+        el('small', {
+          textContent: `${pr.clips} clip${pr.clips === 1 ? '' : 's'} · `
+            + `${pr.sources} file${pr.sources === 1 ? '' : 's'} · ${ago(pr.updated)}`,
+        }),
+      ]),
+      acts,
+    ])
+    card.onclick = () => openProject(pr.id)
+    p.append(card)
+  }
+
+  p.append(el('div', { className: 'hint', textContent:
+    'Projects live in this browser, not on a server. Duplicating one costs no extra space — both point at the same video files.' }))
 }
 
 function panelMedia(p) {
@@ -443,10 +584,11 @@ function panelMedia(p) {
   const grid = el('div', { className: 'mgrid' })
   const shown = state.sources.filter((s) => s.name.toLowerCase().includes(filter.toLowerCase()))
   for (const s of shown) {
-    const plus = el('button', { className: 'madd', textContent: '+', title: 'Add to a new row' })
+    const plus = el('button', { className: 'madd', title: 'Add to a new row' })
+    plus.innerHTML = icon('plus', 15)
     plus.onclick = (e) => { e.stopPropagation(); addClip(s.id) }
-    const del = el('button', { className: 'madd mdel', textContent: '\u00d7',
-      title: `Remove ${s.name} from this project` })
+    const del = el('button', { className: 'madd mdel', title: `Remove ${s.name} from this project` })
+    del.innerHTML = icon('x', 15)
     del.onclick = (e) => { e.stopPropagation(); removeSource(s.id) }
     for (const b of [plus, del]) b.draggable = false // don't drag the thumbnail beneath
     const item = el('div', {
@@ -575,8 +717,6 @@ function panelOutput(p) {
   p.append(el('label', { textContent: 'Output' }))
   p.append(el('div', { className: 'hint', textContent:
     `${state.out.w}×${state.out.h} · ${fmt(R.totalDur(state))} · ${state.clips.length} clip(s)` }))
-  p.append(el('div', { className: 'hint', textContent:
-    'Export plays the timeline once, recording the canvas in realtime, then FreeConvert compresses it to MP4. Keep this tab visible while it records.' }))
 
   // Label, filled bar, and a number box that edits the same value both ways.
   // Rebuilding the panel mid-drag would replace the very input being dragged, so
@@ -598,46 +738,71 @@ function panelOutput(p) {
     p.append(el('div', { className: 'ctl' },
       [el('span', { className: 'ctl-label', textContent: labelText }), bar, num]))
   }
-  p.append(el('label', { textContent: 'Spacing' }))
+
+  p.append(el('label', { textContent: 'Layout' }))
   slider('Gap', 'gap', 160)
   slider('Padding', 'pad', 240)
+  slider('Corners', 'radius', 120)
 
   p.append(el('label', { textContent: 'Background' }))
-  const swatches = el('div', { style: 'display:flex;gap:6px;align-items:center' })
-  const pick = el('input', { type: 'color', value: state.bg,
-    style: 'width:44px;height:32px;padding:2px;cursor:pointer' })
-  pick.oninput = () => { state.bg = pick.value; drawPanel() }
+  const row = el('div', { className: 'bgrow' })
+  const pick = el('input', { type: 'color', value: state.bg, title: 'Custom colour' })
+  pick.oninput = () => { state.bg = pick.value; drawSwatches() }
   pick.onchange = persist
-  swatches.append(pick)
-  for (const c of ['#000000', '#ffffff', '#f2edb8', '#1b2338', '#c0392b']) {
-    const b = el('button', { title: c,
-      style: `width:24px;height:24px;padding:0;border-radius:6px;background:${c}` })
-    b.onclick = () => mutate(() => { state.bg = c })
-    swatches.append(b)
+  const swatches = el('div', { className: 'swatches' })
+  const drawSwatches = () => {
+    swatches.replaceChildren()
+    for (const c of ['#000000', '#ffffff', '#f2edb8', '#1b2338', '#c0392b']) {
+      const b = el('button', { title: c,
+        className: 'sw' + (state.bg.toLowerCase() === c && !state.bgImg ? ' on' : ''),
+        style: `background:${c}` })
+      b.onclick = () => mutate(() => { state.bg = c })
+      swatches.append(b)
+    }
   }
-  p.append(swatches)
-  p.append(el('div', { className: 'hint', textContent:
-    'Both show the background through. They are separate, so you can space the panels apart with no border around the outside.' }))
+  drawSwatches()
+  row.append(pick, swatches)
+  p.append(row)
 
-  p.append(el('label', { textContent: 'Saved project' }))
-  const used = el('div', { className: 'hint', textContent: 'checking storage…' })
+  // A backdrop image sits behind the panels, cover-fitted like the clips are.
+  const imgRow = el('div', { style: 'display:flex;gap:6px;margin-top:8px' })
+  const upload = el('button', { textContent: state.bgImg ? 'Replace image' : 'Use an image',
+    style: 'flex:1' })
+  upload.onclick = () => $('#bgfile').click()
+  imgRow.append(upload)
+  if (state.bgImg) {
+    const clear = el('button', { title: 'Remove the backdrop image', style: 'flex:0 0 auto' })
+    clear.innerHTML = icon('x', 15)
+    clear.onclick = () => mutate(() => {
+      state.bgImg = null
+      R.setBackdrop(null)
+    })
+    imgRow.append(clear)
+  }
+  p.append(imgRow)
+
+  p.append(el('label', { textContent: 'Storage' }))
+  const used = el('div', { className: 'hint', textContent: 'checking…' })
   p.append(used)
   store.usage().then((u) => {
     used.textContent = u
-      ? `${state.sources.length} clip(s) held on this device · ${bytes(u.used)} of ${bytes(u.quota)} used`
-      : `${state.sources.length} clip(s) held on this device`
+      ? `${state.sources.length} file(s) · ${bytes(u.used)} of ${bytes(u.quota)}`
+      : `${state.sources.length} file(s) on this device`
   })
-  p.append(el('div', { className: 'hint', textContent:
-    'Clips and edits are kept in this browser, so a refresh or a closed tab picks up where you left off.' }))
-  const wipe = el('button', { textContent: 'Clear saved project', style: 'margin-top:8px;width:100%' })
+
+  const wipe = el('button', { textContent: 'Empty this project', style: 'margin-top:8px;width:100%' })
   wipe.onclick = async () => {
-    if (!confirm('Delete every clip and edit saved in this browser?')) return
-    await store.clearProject()
+    if (!confirm(`Remove every clip from "${state.title}"? Other projects are untouched.`)) return
     for (const src of state.sources) URL.revokeObjectURL(src.url)
-    state = { title: state.title, sources: [], clips: [], out: state.out, sel: null, grid: null,
-              gap: state.gap, pad: state.pad, bg: state.bg, xp: state.xp }
+    R.dropAll()
+    // keep id, title and look; drop only the contents
+    state = { ...BLANK(), id: state.id, title: state.title, out: state.out,
+              gap: state.gap, pad: state.pad, radius: state.radius, bg: state.bg, xp: state.xp }
     undo.length = 0; redo.length = 0
-    setStatus('project cleared')
+    persist()
+    await store.gc() // release files no project references any more
+    projects = await store.listProjects()
+    setStatus('project emptied')
     ui()
   }
   p.append(wipe)
@@ -646,7 +811,8 @@ function panelOutput(p) {
 function drawPanel() {
   const p = $('#panel')
   p.replaceChildren()
-  ;({ media: panelMedia, layout: panelLayout, adjust: panelAdjust, output: panelOutput })[tab](p)
+  ;({ projects: panelProjects, media: panelMedia, layout: panelLayout,
+     adjust: panelAdjust, output: panelOutput })[tab](p)
   paintRanges()
 }
 
@@ -790,8 +956,8 @@ function drawTimeline() {
   for (let row = 0; row < rows; row++) {
     const inRow = state.clips.filter((c) => c.row === row)
     const allMuted = inRow.length > 0 && inRow.every((c) => c.muted)
-    const btn = el('button', { textContent: allMuted ? '🔇' : '🔊',
-      className: allMuted ? 'on' : '', title: `Mute row ${row + 1}` })
+    const btn = el('button', { className: allMuted ? 'on' : '', title: `Mute row ${row + 1}` })
+    btn.innerHTML = icon(allMuted ? 'muted' : 'volume', 15)
     btn.onclick = () => mutate(() => inRow.forEach((c) => { c.muted = !allMuted }))
     heads.append(el('div', { className: 'rowh' }, [btn]))
   }
@@ -828,13 +994,21 @@ function paintRange(r) {
 const paintRanges = () => document.querySelectorAll('input[type=range]').forEach(paintRange)
 addEventListener('input', (e) => { if (e.target?.type === 'range') paintRange(e.target) }, true)
 
+// Preview canvas is capped by pixel count, not by dimension, so portrait and
+// landscape both land near the same cost. Export resets this to 1.
+const PREVIEW_PIXELS = 1280 * 720
+const previewScale = () =>
+  Math.min(1, Math.sqrt(PREVIEW_PIXELS / (state.out.w * state.out.h)))
+
 function ui() {
   closeDD()
-  canvas.width = state.out.w
-  canvas.height = state.out.h
+  const k = previewScale()
+  R.setScale(k)
+  canvas.width = Math.round(state.out.w * k)
+  canvas.height = Math.round(state.out.h * k)
   $('#undo').disabled = !undo.length
   $('#redo').disabled = !redo.length
-  drawRail(); drawPanel(); drawTimeline(); drawSizeDD(); drawName()
+  drawRail(); drawPanel(); drawTimeline(); drawSizeDD(); drawName(); drawSwitch()
   paintRanges()
 }
 
@@ -858,7 +1032,106 @@ pname.onchange = () => {
 }
 pname.onkeydown = (e) => { if (e.key === 'Enter' || e.key === 'Escape') pname.blur() }
 
+// Fill the icon slots in the markup. Done here so icons.js stays the only place
+// glyphs live, rather than pasting SVG into index.html.
+for (const [sel, name] of [['#undo', 'undo'], ['#redo', 'redo'],
+                           ['#mcrop i', 'crop'], ['#mframe i', 'frame'],
+                           ['#split i', 'split'], ['#dup i', 'copy'], ['#del i', 'trash']]) {
+  const n = $(sel)
+  if (n) n.innerHTML = icon(name, sel.endsWith('i') ? 14 : 16)
+}
+$('#play').innerHTML = icon('play', 16)
+
+// ---- projects -----------------------------------------------------------
+// Several projects, all in IndexedDB. The picker sits beside the name.
+
+let projects = []
+
+// Swap the whole editor over to another project, releasing this one's blob URLs.
+async function openProject(id) {
+  if (id === state.id) return
+  for (const src of state.sources) URL.revokeObjectURL(src.url)
+  R.dropAll()
+  const saved = await store.loadProject(id)
+  if (!saved) return setStatus("that project could not be opened", true)
+  state = { ...BLANK(), ...saved, xp: { ...BLANK().xp, ...(saved.xp ?? {}) } }
+  undo.length = 0; redo.length = 0
+  await store.setCurrent(id)
+  normalize()
+  t = 0
+  await loadBackdrop()
+  projects = await store.listProjects()
+  ui()
+  setStatus(`opened ${state.title}`)
+}
+
+async function createProject() {
+  const id = await store.newProject('Untitled project', Date.now())
+  for (const src of state.sources) URL.revokeObjectURL(src.url)
+  R.dropAll()
+  state = { ...BLANK(), id, title: 'Untitled project' }
+  R.setBackdrop(null)
+  undo.length = 0; redo.length = 0
+  t = 0
+  projects = await store.listProjects()
+  ui()
+  setStatus('new project')
+}
+
+async function removeProject(id) {
+  const p = projects.find((x) => x.id === id)
+  if (!confirm(`Delete "${p?.title || 'this project'}" and its clips? This cannot be undone.`)) return
+  projects = await store.deleteProject(id)
+  if (id === state.id) {
+    const next = projects[0]?.id
+    if (next) { state.id = null; await openProject(next) }
+    else await createProject()
+  } else {
+    ui()
+  }
+  setStatus('project deleted')
+}
+
+function drawSwitch() {
+  const opts = projects.map((p) => ({
+    value: p.id,
+    label: p.title || 'Untitled project',
+    meta: `${p.clips} clip${p.clips === 1 ? '' : 's'}`,
+  }))
+  opts.push({ value: '__new', label: '+ New project', sep: true })
+  if (projects.length > 1) opts.push({ value: '__del', label: `Delete "${state.title}"` })
+  $('#pswitch').replaceChildren(dropdown({
+    value: state.id, options: opts, label: 'Projects',
+    onChange: (v) => {
+      if (v === '__new') return createProject()
+      if (v === '__del') return removeProject(state.id)
+      openProject(v)
+    },
+  }))
+}
+
 $('#file').onchange = (e) => { addFiles([...e.target.files]); e.target.value = '' }
+$('#bgfile').onchange = async (e) => {
+  const f = e.target.files[0]
+  e.target.value = ''
+  if (!f) return
+  const id = uid()
+  try {
+    await store.rememberFile(id, f)
+  } catch (err) {
+    return setStatus(`couldn't save that image: ${err.message || err}`, true)
+  }
+  mutate(() => { state.bgImg = id })
+  R.setBackdrop(URL.createObjectURL(f))
+  setStatus(`backdrop set from ${f.name}`)
+}
+
+// Re-hydrate the backdrop whenever a project opens.
+async function loadBackdrop() {
+  if (!state.bgImg) return R.setBackdrop(null)
+  const file = await store.readFile(state.bgImg).catch(() => null)
+  R.setBackdrop(file ? URL.createObjectURL(file) : null)
+}
 $('#play').onclick = () => (playing ? pause() : play())
 const setMode = (m) => {
   mode = m
@@ -1167,6 +1440,12 @@ $('#xcrf').oninput = () => {
 }
 $('#xmb').oninput = () => { state.xp.mb = +$('#xmb').value }
 $('#xcancel').onclick = () => $('#xdlg').close()
+$('#nclose').innerHTML = icon('x', 17)
+$('#nclose').onclick = () => $('#ndlg').close()
+$('#nok').onclick = () => $('#ndlg').close()
+
+$('#xclose').innerHTML = icon('x', 17)
+$('#xclose').onclick = () => { if (!busy) $('#xdlg').close() }
 $('#xagain').onclick = () => { pane('xset'); drawDialog() }
 
 // Escape must not walk away from a recording that's still running.
@@ -1210,11 +1489,15 @@ $('#xgo').onclick = async () => {
     // recorder, and anything slow after that is captured as a frozen frame.
     await seek(0)
     await R.resume()
+    // Record at the real output size, not the preview's reduced one.
+    R.setScale(1)
+    canvas.width = state.out.w
+    canvas.height = state.out.h
 
     const { url, raw } = await R.exportVideo(canvas, state, async (dur) => {
       t = 0
       playing = true
-      $('#play').textContent = '❚❚'
+      $('#play').innerHTML = icon('pause', 16)
       await new Promise((done) => {
         const iv = setInterval(() => {
           progress(t / dur, 'Recording', `${t.toFixed(1)}s of ${dur.toFixed(1)}s`)
@@ -1249,22 +1532,33 @@ $('#xgo').onclick = async () => {
   } finally {
     busy = false
     $('#go').disabled = false
+    ui() // restore the preview-sized canvas
   }
 }
 
-// Restore the last project before first paint, so a refresh is a no-op.
+// Boot: lift any old single-project store, then open the last project — or make
+// the first one. Runs before first paint so a refresh is a no-op.
 ;(async () => {
-  const saved = await store.loadProject().catch(() => null)
-  if (saved) {
-    state = { title: saved.title || 'Untitled project',
-              sources: saved.sources, clips: saved.clips ?? [],
-              out: saved.out ?? state.out, sel: saved.sel ?? null, grid: saved.grid ?? null,
-              gap: saved.gap ?? 0, pad: saved.pad ?? 0, bg: saved.bg ?? '#000000',
-              xp: { ...state.xp, ...(saved.xp ?? {}) } }
-    normalize() // an older project may predate the one-sequence-per-row rule
-    setStatus(saved.lost
-      ? `restored — ${saved.lost} clip(s) couldn't be recovered`
-      : `restored ${state.sources.length} clip(s)`, !!saved.lost)
+  try {
+    await store.migrate(Date.now())
+    projects = await store.listProjects()
+    const cur = (await store.currentId()) ?? projects[0]?.id
+    const saved = cur ? await store.loadProject(cur) : null
+
+    if (saved) {
+      state = { ...BLANK(), ...saved, xp: { ...BLANK().xp, ...(saved.xp ?? {}) } }
+      normalize() // an older project may predate the one-sequence-per-row rule
+      await loadBackdrop()
+      setStatus(saved.lost
+        ? `restored — ${saved.lost} clip(s) couldn't be recovered`
+        : `restored ${state.sources.length} clip(s)`, !!saved.lost)
+    } else {
+      state.id = await store.newProject(state.title, Date.now())
+      projects = await store.listProjects()
+    }
+  } catch (e) {
+    setStatus(`couldn't open the last project: ${e.message || e}`, true)
+    if (!state.id) state.id = await store.newProject(state.title, Date.now()).catch(() => null)
   }
   ui()
   requestAnimationFrame(loop)

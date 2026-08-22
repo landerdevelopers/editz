@@ -69,6 +69,20 @@ ctx.drawImage(video, sx,sy,sw,sh,  dx,dy,dw,dh)
 //                   \_ crop _/    \_ rect _/
 ```
 
+## Projects
+
+Several projects, all in this browser, no database. **Projects** in the rail is the
+full manager — open, duplicate, delete, with clip and file counts. A quick switcher
+also sits beside the project name.
+
+Duplicating costs no extra storage: both projects point at the same video files,
+and a file is only deleted once no project references it. Each is a small JSON doc in IndexedDB
+alongside the video files.
+
+Files live in one shared space keyed by source id. Sweeping unreferenced ones
+therefore unions **every** project's sources — scoping that to the open project
+would delete footage the others still need.
+
 ## Your work is kept
 
 Clips and edits survive a refresh, a closed tab, or a restart — no re-uploading.
@@ -82,7 +96,8 @@ pointing at it are emptied, so a partial store can't restore a broken timeline.
 No state library — state is one plain object with a single `mutate()` chokepoint,
 which is all a persistence layer needs to hook.
 
-**Output → Clear saved project** wipes it and frees the space.
+**Output → Empty this project** clears its clips and frees their space; other
+projects are untouched. Deleting a project is in the picker.
 
 ## Files
 
@@ -92,6 +107,7 @@ which is all a persistence layer needs to hook.
 | `public/render.js` | Canvas compositor, audio graph, playback clock, export |
 | `public/app.js` | State, undo/redo, panels, timeline |
 | `public/index.html` | Markup + styles |
+| `public/icons.js` | Lucide glyphs, inlined (ISC) |
 | `public/store.js` | IndexedDB persistence for the project and its video blobs |
 | `api/_freeconvert.js` | FreeConvert job creation, polling, option validation |
 | `api/job.js` | Serverless endpoint (Vercel/Netlify) |
@@ -121,9 +137,9 @@ Importing never touches the timeline — clips land in Media and you place them.
 - **Crop / Frame** above the timeline switches what dragging the preview does:
   Crop pans inside a clip, Frame moves and resizes its panel by the corner grips.
   Exact X/Y/W/H live in the Adjust panel.
-- **Output** sets the gap between panels, the padding around the edge, and the
-  background colour showing through both. They are independent, so panels can be
-  spaced apart with no border around the outside.
+- **Output** sets gap, padding and corner rounding, plus the background — a colour
+  or an uploaded image, cover-fitted behind the panels. Gap and padding are
+  independent, so panels can be spaced apart with no border around the outside.
 - **Drag a clip in the preview onto another grid slot** to move or swap it —
   empty slots included. The target slot is outlined while you drag.
 - **Drag inside one slot** to pan its crop, **scroll** to zoom. A drag that leaves
@@ -144,6 +160,19 @@ webm in and mp4 out directly — confirmed against
 also where the option names come from. Settings arriving from the browser are
 re-validated server-side against allowlists before they reach the API.
 
+## Performance
+
+A `<video>` element is a live decoder, not a cheap handle, so elements exist only
+for clips the playhead is near (±3s) and are released beyond a ceiling of eight.
+Creating one per clip up front is unnoticeable with small test files and crippling
+with 1080p screen recordings — twelve clips meant twelve simultaneous HD decoders.
+
+The preview also composites at a capped pixel count rather than the export size:
+filling 1920×1080 every frame to display it a few hundred pixels wide is wasted
+work. Export resets the scale to 1.
+
+Measured with twelve clips: decoders 15 → 4, and 0.13ms → 0.018ms per composite.
+
 ## Known ceiling
 
 Export records in **realtime** off the canvas, so a 60s edit takes 60s and the
@@ -156,6 +185,20 @@ comfortable. If either becomes a problem the fix is to replace `exportVideo()` i
 `render.js` with a server-side ffmpeg `filter_complex` (xstack + crop + trim),
 which is frame-exact and faster than realtime. Export is deliberately a single
 function so that swap stays cheap.
+
+## What's new
+
+The **New** button at the foot of the rail lists recent additions, with a dot
+until it has been opened. Add an entry to `WHATS_NEW` in `public/app.js` and bump
+`RELEASE` beside it — the dot then returns for everyone who hasn't looked since.
+The seen flag is one string in `localStorage`; it isn't project data, so it has no
+business in the project store.
+
+## Credits
+
+Icons from [Lucide](https://lucide.dev) — ISC License, © Lucide Icons and
+Contributors; icons derived from Feather are MIT, © Cole Bemis. Inlined in
+`public/icons.js` rather than depended on, since the app has no build step.
 
 ## Not built
 
