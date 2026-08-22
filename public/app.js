@@ -156,6 +156,27 @@ async function addFiles(files) {
 
 // ---- clips --------------------------------------------------------------
 
+// Removing a source has to take its clips with it, or the timeline is left
+// pointing at footage that no longer exists.
+async function removeSource(id) {
+  const src = srcById(id)
+  if (!src) return
+  const used = state.clips.filter((c) => c.srcId === id).length
+  if (used && !confirm(
+    `Remove ${src.name}? It is used by ${used} clip${used > 1 ? 's' : ''} on the timeline, which will go too.`)) return
+
+  mutate(() => {
+    for (const c of state.clips.filter((c) => c.srcId === id)) R.dropClip(c.id)
+    state.clips = state.clips.filter((c) => c.srcId !== id)
+    state.sources = state.sources.filter((s) => s.id !== id)
+    if (!state.clips.some((c) => c.id === state.sel)) state.sel = state.clips[0]?.id ?? null
+  })
+  URL.revokeObjectURL(src.url)
+  await store.forgetFile(id).catch(() => {}) // free the bytes now, not at next load
+  setStatus(`removed ${src.name}${used ? ` and ${used} clip(s)` : ''}`)
+}
+
+
 function addClip(srcId, row = rowCount(), start = null) {
   const src = srcById(srcId)
   if (!src) return
@@ -424,11 +445,15 @@ function panelMedia(p) {
   for (const s of shown) {
     const plus = el('button', { className: 'madd', textContent: '+', title: 'Add to a new row' })
     plus.onclick = (e) => { e.stopPropagation(); addClip(s.id) }
+    const del = el('button', { className: 'madd mdel', textContent: '\u00d7',
+      title: `Remove ${s.name} from this project` })
+    del.onclick = (e) => { e.stopPropagation(); removeSource(s.id) }
+    for (const b of [plus, del]) b.draggable = false // don't drag the thumbnail beneath
     const item = el('div', {
       className: 'mitem', draggable: true,
       title: `${s.name} — drag onto the timeline, anywhere you like`,
     }, [
-      el('img', { src: s.thumb, alt: '' }), plus,
+      el('img', { src: s.thumb, alt: '' }), plus, del,
       el('b', { textContent: s.name.replace(/\.[^.]+$/, '') }),
       el('small', { textContent: `${fmt(s.dur)} · ${s.w}×${s.h}` }),
     ])

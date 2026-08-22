@@ -128,7 +128,7 @@
          font-weight:600; padding:9px; margin-bottom:12px; }
   #add:hover { background:#fbf6c4; border-color:#fbf6c4; }
   .mgrid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
-  .mitem { cursor:grab; position:relative; }
+  .mitem { cursor:grab; position:relative; user-select:none; -webkit-user-select:none; }
   .mitem:active { cursor:grabbing; }
   .mitem img { width:100%; aspect-ratio:1; object-fit:cover; display:block; background:#000;
                border-radius:11px; border:2px solid transparent; pointer-events:none; }
@@ -138,6 +138,8 @@
           display:flex; align-items:center; justify-content:center; font-size:17px;
           line-height:1; backdrop-filter:blur(4px); }
   .madd:hover { background:var(--accent); border-color:var(--accent); color:#17171b; }
+  .mdel { left:6px; right:auto; font-size:15px; }
+  .mdel:hover { background:var(--danger); border-color:var(--danger); color:#fff; }
 
   /* drop targets */
   .blk.drop, .lane.drop { outline:2px dashed var(--accent); outline-offset:-2px; }
