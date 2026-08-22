@@ -16,7 +16,10 @@ Then open http://localhost:8080. No install step, no dependencies.
 
 ## Deploy
 
-Static files plus one serverless function — deploys to Vercel or Netlify as-is.
+Static files in `public/`, one serverless function in `api/` — the layout Vercel
+and Netlify detect with zero config. Anything else invites the host to guess, and
+a wrong guess routes every request into a function that has no business serving
+the page. Deploys as-is.
 Set `FREECONVERT_API_KEY` in the host's environment variables; it is the only
 config, and it never reaches the browser.
 
@@ -85,16 +88,16 @@ which is all a persistence layer needs to hook.
 
 | File | What |
 |---|---|
-| `layouts.js` | Grid rect table, cover-fit crop, panel spacing (pure, no DOM) |
-| `render.js` | Canvas compositor, audio graph, playback clock, export |
-| `app.js` | State, undo/redo, panels, timeline |
-| `index.html` | Markup + styles |
-| `store.js` | IndexedDB persistence for the project and its video blobs |
-| `freeconvert.js` | FreeConvert job creation, polling, and option validation |
+| `public/layouts.js` | Grid rect table, cover-fit crop, panel spacing (pure, no DOM) |
+| `public/render.js` | Canvas compositor, audio graph, playback clock, export |
+| `public/app.js` | State, undo/redo, panels, timeline |
+| `public/index.html` | Markup + styles |
+| `public/store.js` | IndexedDB persistence for the project and its video blobs |
+| `api/_freeconvert.js` | FreeConvert job creation, polling, option validation |
 | `api/job.js` | Serverless endpoint (Vercel/Netlify) |
-| `server.mjs` | Local dev server: static files + the same endpoints |
-| `make_test_clips.js` | Dev fixture: generates labelled test clips in-browser |
-| `arrange.js` | Row rules: one sequence per row, where a dragged clip lands |
+| `server.mjs` | Local dev server: serves `public/` + the same endpoints |
+| `public/make_test_clips.js` | Dev fixture: generates labelled test clips in-browser |
+| `public/arrange.js` | Row rules: one sequence per row, where a dragged clip lands |
 | `test.mjs` | `node test.mjs` |
 
 ## Controls

@@ -3,13 +3,13 @@
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, normalize, join } from 'node:path'
-import { createJob, jobStatus } from './freeconvert.js'
+import { createJob, jobStatus } from './api/_freeconvert.js'
 
 try { process.loadEnvFile('.env') } catch {} // optional; env vars work too
 
 const KEY = process.env.FREECONVERT_API_KEY
 const PORT = process.env.PORT || 8080
-const ROOT = import.meta.dirname
+const ROOT = join(import.meta.dirname, 'public')
 
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',

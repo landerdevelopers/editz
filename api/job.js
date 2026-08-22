@@ -2,7 +2,7 @@
 // The recorded video never passes through here — the browser sends it straight to
 // FreeConvert using the upload form this returns, which keeps the API key server
 // side without running a video-sized request through a function.
-import { createJob, jobStatus } from '../freeconvert.js'
+import { createJob, jobStatus } from './_freeconvert.js'
 
 export default async function handler(req, res) {
   const key = process.env.FREECONVERT_API_KEY

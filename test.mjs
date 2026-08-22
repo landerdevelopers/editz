@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { LAYOUTS, coverRect, panelBox } from './layouts.js'
-import { separateRows, freeStart, rowLimits } from './arrange.js'
+import { LAYOUTS, coverRect, panelBox } from './public/layouts.js'
+import { separateRows, freeStart, rowLimits } from './public/arrange.js'
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps
 
