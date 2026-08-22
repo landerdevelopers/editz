@@ -105,8 +105,8 @@ which is all a persistence layer needs to hook.
 Importing never touches the timeline — clips land in Media and you place them.
 
 - **Drag** a clip from Media onto any row; it starts where you let go. The **+** on
-  a thumbnail puts it on a new row. Video files can be dropped anywhere in the
-  window to import.
+  a thumbnail puts it on a new row, the **×** removes it from the project. Video
+  files can be dropped anywhere in the window to import.
 - **Drag a clip** along its row to move it in time, or up and down to change rows.
   Positions snap to other clips, to zero, and to the playhead; a clip never lands
   on top of another on the same row.

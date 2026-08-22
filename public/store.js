@@ -38,6 +38,9 @@ const SCHEMA = 2
 // Written once when a clip is imported, not on every save — blobs are big.
 export const rememberFile = (id, file) => put(FILE(id), file)
 
+// Drop a clip's bytes now rather than waiting for the next load to sweep them.
+export const forgetFile = (id) => del(FILE(id))
+
 // Saves are debounced: mutate() fires often and the doc rewrite is pointless churn.
 let timer, pending
 export function save(state, onError) {
