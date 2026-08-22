@@ -2,6 +2,7 @@ import { LAYOUTS } from './layouts.js'
 import * as R from './render.js'
 import * as store from './store.js'
 import { separateRows, freeStart, rowLimits } from './arrange.js'
+import { icon, iconEl } from './icons.js'
 
 const $ = (s) => document.querySelector(s)
 const canvas = $('#canvas')
@@ -184,7 +185,10 @@ async function removeSource(id) {
     if (!state.clips.some((c) => c.id === state.sel)) state.sel = state.clips[0]?.id ?? null
   })
   URL.revokeObjectURL(src.url)
-  await store.forgetFile(id).catch(() => {}) // free the bytes now, not at next load
+  // Not forgetFile: a duplicated project may share this file. Write the doc first
+  // so the sweep sees the removal, then let gc decide whether anyone still wants it.
+  await store.flush(state).then(() => store.gc()).catch(() => {})
+  projects = await store.listProjects()
   setStatus(`removed ${src.name}${used ? ` and ${used} clip(s)` : ''}`)
 }
 
@@ -283,9 +287,9 @@ async function play() {
   await R.resume()
   if (t >= R.totalDur(state) - 0.01) await seek(0)
   playing = true
-  $('#play').textContent = '❚❚'
+  $('#play').innerHTML = icon('pause', 16)
 }
-function pause() { playing = false; $('#play').textContent = '▶' }
+function pause() { playing = false; $('#play').innerHTML = icon('play', 16) }
 
 async function seek(to) {
   t = clamp(to, 0, R.totalDur(state))
@@ -330,8 +334,10 @@ function dropdown({ value, options, onChange, label = 'Select', wide }) {
   const cur = options.find((o) => o.value === value)
   const btn = el('button', { className: 'ddbtn', type: 'button' })
   btn.setAttribute('aria-expanded', 'false')
-  btn.append(el('span', { textContent: cur ? cur.label : label }),
-             el('i', { className: 'ddchev', textContent: '▼' }))
+  btn.append(el('span', { textContent: cur ? cur.label : label }))
+  const chev = el('i', { className: 'ddchev' })
+  chev.innerHTML = icon('chevron', 14)
+  btn.append(chev)
   const wrap = el('div', { className: 'dd' }, [btn])
   if (wide) wrap.style.width = '100%'
 
@@ -393,12 +399,6 @@ function dropdown({ value, options, onChange, label = 'Select', wide }) {
   return wrap
 }
 
-const ICONS = {
-  media: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="m10 9.5 5 2.5-5 2.5z" fill="currentColor" stroke="none"/></svg>',
-  layout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 3v18M3 12h18"/></svg>',
-  adjust: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>',
-  output: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15V3m0 0L8 7m4-4 4 4"/><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/></svg>',
-}
 
 function layoutIcon(name) {
   const box = el('div', { className: 'lico' })
@@ -411,7 +411,8 @@ function layoutIcon(name) {
 
 // ---- rail + panels ------------------------------------------------------
 
-const TABS = [['media', 'Media'], ['layout', 'Grid'], ['adjust', 'Adjust'], ['output', 'Output']]
+const TABS = [['projects', 'Projects'], ['media', 'Media'], ['layout', 'Grid'],
+              ['adjust', 'Adjust'], ['output', 'Output']]
 const SIZES = [
   { value: '1080x1920', label: 'Vertical · 1080×1920', swatch: 'aspect-ratio:9/16;height:18px;width:auto' },
   { value: '1080x1080', label: 'Square · 1080×1080', swatch: 'aspect-ratio:1;height:18px;width:auto' },
@@ -434,10 +435,75 @@ function drawRail() {
   rail.replaceChildren(el('span', { className: 'logo', textContent: 'editz' }))
   for (const [key, label] of TABS) {
     const b = el('button', { className: tab === key ? 'on' : '', title: label })
-    b.innerHTML = ICONS[key] + `<span>${label}</span>`
+    b.innerHTML = icon(key, 20) + `<span>${label}</span>`
     b.onclick = () => { tab = key; drawRail(); drawPanel() }
     rail.append(b)
   }
+}
+
+// How long ago, in the roughest units that still say something useful.
+function ago(ms) {
+  if (!ms) return 'never opened'
+  const s = Math.max(0, (Date.now() - ms) / 1000)
+  if (s < 90) return 'just now'
+  const m = s / 60
+  if (m < 60) return `${Math.round(m)} min ago`
+  const h = m / 60
+  if (h < 24) return `${Math.round(h)}h ago`
+  return `${Math.round(h / 24)}d ago`
+}
+
+function panelProjects(p) {
+  p.append(el('label', { textContent: 'Projects' }))
+  const add = el('button', { id: 'add', textContent: '+ New project' })
+  add.onclick = createProject
+  p.append(add)
+
+  if (!projects.length) {
+    p.append(el('div', { className: 'hint', textContent: 'No saved projects yet.' }))
+    return
+  }
+
+  for (const pr of projects) {
+    const here = pr.id === state.id
+    const acts = el('div', { className: 'acts' })
+
+    const dup = el('button', { title: `Duplicate ${pr.title}` })
+    dup.innerHTML = icon('copy', 15)
+    dup.onclick = async (e) => {
+      e.stopPropagation()
+      if (here) await store.flush(state) // copy what's on screen, not the last save
+      const id = await store.duplicateProject(pr.id, `${pr.title} copy`, Date.now())
+      projects = await store.listProjects()
+      ui()
+      setStatus(`duplicated to "${pr.title} copy"`)
+      return id
+    }
+
+    const rm = el('button', { className: 'danger', title: `Delete ${pr.title}` })
+    rm.innerHTML = icon('trash', 15)
+    rm.onclick = (e) => { e.stopPropagation(); removeProject(pr.id) }
+
+    acts.append(dup)
+    if (projects.length > 1) acts.append(rm)
+
+    const card = el('div', { className: 'pcard' + (here ? ' on' : '') }, [
+      iconEl(here ? 'media' : 'projects', 17),
+      el('div', { className: 'grow' }, [
+        el('b', { textContent: pr.title || 'Untitled project' }),
+        el('small', {
+          textContent: `${pr.clips} clip${pr.clips === 1 ? '' : 's'} · `
+            + `${pr.sources} file${pr.sources === 1 ? '' : 's'} · ${ago(pr.updated)}`,
+        }),
+      ]),
+      acts,
+    ])
+    card.onclick = () => openProject(pr.id)
+    p.append(card)
+  }
+
+  p.append(el('div', { className: 'hint', textContent:
+    'Projects live in this browser, not on a server. Duplicating one costs no extra space — both point at the same video files.' }))
 }
 
 function panelMedia(p) {
@@ -458,10 +524,11 @@ function panelMedia(p) {
   const grid = el('div', { className: 'mgrid' })
   const shown = state.sources.filter((s) => s.name.toLowerCase().includes(filter.toLowerCase()))
   for (const s of shown) {
-    const plus = el('button', { className: 'madd', textContent: '+', title: 'Add to a new row' })
+    const plus = el('button', { className: 'madd', title: 'Add to a new row' })
+    plus.innerHTML = icon('plus', 15)
     plus.onclick = (e) => { e.stopPropagation(); addClip(s.id) }
-    const del = el('button', { className: 'madd mdel', textContent: '\u00d7',
-      title: `Remove ${s.name} from this project` })
+    const del = el('button', { className: 'madd mdel', title: `Remove ${s.name} from this project` })
+    del.innerHTML = icon('x', 15)
     del.onclick = (e) => { e.stopPropagation(); removeSource(s.id) }
     for (const b of [plus, del]) b.draggable = false // don't drag the thumbnail beneath
     const item = el('div', {
@@ -665,7 +732,8 @@ function panelOutput(p) {
 function drawPanel() {
   const p = $('#panel')
   p.replaceChildren()
-  ;({ media: panelMedia, layout: panelLayout, adjust: panelAdjust, output: panelOutput })[tab](p)
+  ;({ projects: panelProjects, media: panelMedia, layout: panelLayout,
+     adjust: panelAdjust, output: panelOutput })[tab](p)
   paintRanges()
 }
 
@@ -809,8 +877,8 @@ function drawTimeline() {
   for (let row = 0; row < rows; row++) {
     const inRow = state.clips.filter((c) => c.row === row)
     const allMuted = inRow.length > 0 && inRow.every((c) => c.muted)
-    const btn = el('button', { textContent: allMuted ? '🔇' : '🔊',
-      className: allMuted ? 'on' : '', title: `Mute row ${row + 1}` })
+    const btn = el('button', { className: allMuted ? 'on' : '', title: `Mute row ${row + 1}` })
+    btn.innerHTML = icon(allMuted ? 'muted' : 'volume', 15)
     btn.onclick = () => mutate(() => inRow.forEach((c) => { c.muted = !allMuted }))
     heads.append(el('div', { className: 'rowh' }, [btn]))
   }
@@ -876,6 +944,16 @@ pname.onchange = () => {
   persist()
 }
 pname.onkeydown = (e) => { if (e.key === 'Enter' || e.key === 'Escape') pname.blur() }
+
+// Fill the icon slots in the markup. Done here so icons.js stays the only place
+// glyphs live, rather than pasting SVG into index.html.
+for (const [sel, name] of [['#undo', 'undo'], ['#redo', 'redo'],
+                           ['#mcrop i', 'crop'], ['#mframe i', 'frame'],
+                           ['#split i', 'split'], ['#dup i', 'copy'], ['#del i', 'trash']]) {
+  const n = $(sel)
+  if (n) n.innerHTML = icon(name, sel.endsWith('i') ? 14 : 16)
+}
+$('#play').innerHTML = icon('play', 16)
 
 // ---- projects -----------------------------------------------------------
 // Several projects, all in IndexedDB. The picker sits beside the name.
@@ -1299,7 +1377,7 @@ $('#xgo').onclick = async () => {
     const { url, raw } = await R.exportVideo(canvas, state, async (dur) => {
       t = 0
       playing = true
-      $('#play').textContent = '❚❚'
+      $('#play').innerHTML = icon('pause', 16)
       await new Promise((done) => {
         const iv = setInterval(() => {
           progress(t / dur, 'Recording', `${t.toFixed(1)}s of ${dur.toFixed(1)}s`)

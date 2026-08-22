@@ -105,6 +105,24 @@ export function save(state, onError) {
   }, 400)
 }
 
+// Write now instead of waiting out the debounce. Needed before gc(), which reads
+// the stored docs — sweeping against a stale doc would keep or drop the wrong files.
+export async function flush(state) {
+  clearTimeout(timer)
+  const at = Date.now()
+  const src = state ?? pending
+  if (!src) return
+  pending = src
+  await put(DOC(src.id), {
+    v: SCHEMA, id: src.id, title: src.title, updated: at,
+    clips: src.clips, grid: src.grid, gap: src.gap, pad: src.pad, bg: src.bg,
+    out: src.out, sel: src.sel, xp: src.xp,
+    sources: src.sources.map(({ url, ...rest }) => rest),
+  })
+  await setCurrent(src.id)
+  await touchIndex(src, at)
+}
+
 // ---- load ----------------------------------------------------------------
 
 // Returns a state patch, or null when there's nothing saved. A source whose file
@@ -141,6 +159,17 @@ export async function newProject(title, at) {
   await put(DOC(id), { v: SCHEMA, id, title, updated: at, clips: [], sources: [] })
   await setCurrent(id)
   return id
+}
+
+// A copy costs no video storage: both projects point at the same file keys, and
+// gc() only deletes a file once no project references it.
+export async function duplicateProject(id, title, at) {
+  const doc = await get(DOC(id))
+  if (!doc) throw new Error('project not found')
+  const copy = { ...doc, id: uid(), title, updated: at }
+  await put(DOC(copy.id), copy)
+  await touchIndex({ id: copy.id, title, clips: copy.clips ?? [], sources: copy.sources ?? [] }, at)
+  return copy.id
 }
 
 // Delete a project, then sweep files no project references any more.

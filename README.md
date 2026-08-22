@@ -71,8 +71,12 @@ ctx.drawImage(video, sx,sy,sw,sh,  dx,dy,dw,dh)
 
 ## Projects
 
-Several projects, all in this browser, no database. The picker sits beside the
-project name: switch, create, or delete. Each is a small JSON doc in IndexedDB
+Several projects, all in this browser, no database. **Projects** in the rail is the
+full manager — open, duplicate, delete, with clip and file counts. A quick switcher
+also sits beside the project name.
+
+Duplicating costs no extra storage: both projects point at the same video files,
+and a file is only deleted once no project references it. Each is a small JSON doc in IndexedDB
 alongside the video files.
 
 Files live in one shared space keyed by source id. Sweeping unreferenced ones
@@ -103,6 +107,7 @@ projects are untouched. Deleting a project is in the picker.
 | `public/render.js` | Canvas compositor, audio graph, playback clock, export |
 | `public/app.js` | State, undo/redo, panels, timeline |
 | `public/index.html` | Markup + styles |
+| `public/icons.js` | Lucide glyphs, inlined (ISC) |
 | `public/store.js` | IndexedDB persistence for the project and its video blobs |
 | `api/_freeconvert.js` | FreeConvert job creation, polling, option validation |
 | `api/job.js` | Serverless endpoint (Vercel/Netlify) |
@@ -167,6 +172,12 @@ comfortable. If either becomes a problem the fix is to replace `exportVideo()` i
 `render.js` with a server-side ffmpeg `filter_complex` (xstack + crop + trim),
 which is frame-exact and faster than realtime. Export is deliberately a single
 function so that swap stays cheap.
+
+## Credits
+
+Icons from [Lucide](https://lucide.dev) — ISC License, © Lucide Icons and
+Contributors; icons derived from Feather are MIT, © Cole Bemis. Inlined in
+`public/icons.js` rather than depended on, since the app has no build step.
 
 ## Not built
 

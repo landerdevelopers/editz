@@ -110,6 +110,21 @@
   ::-webkit-scrollbar-thumb { background:#33333d; border-radius:4px; }
   ::-webkit-scrollbar-track { background:transparent; }
   .grow { flex:1; }
+  .pcard { display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:10px;
+           border:1px solid var(--line); background:var(--card2); margin-bottom:7px;
+           cursor:pointer; }
+  .pcard:hover { border-color:#3a3a46; }
+  .pcard.on { border-color:var(--accent); background:#22221c; }
+  .pcard .grow { min-width:0; }
+  .pcard b { display:block; font-size:12px; font-weight:600; overflow:hidden;
+             text-overflow:ellipsis; white-space:nowrap; }
+  .pcard small { display:block; color:var(--dim); font-size:10px; margin-top:2px; }
+  .pcard .acts { display:flex; gap:2px; flex:0 0 auto; }
+  .pcard .acts button { padding:5px; background:none; border:none; color:var(--dim);
+                        border-radius:6px; display:inline-flex; }
+  .pcard .acts button:hover { background:#33333d; color:var(--fg); }
+  .pcard .acts button.danger:hover { background:var(--danger); color:#fff; }
+
   .hint { color:var(--dim); font-size:11px; margin-top:10px; line-height:1.55; }
   .hint.warn { color:var(--warn); }
 
@@ -207,6 +222,13 @@
   .modes button { padding:4px 12px; font-size:11.5px; border:none; background:none;
                   border-radius:7px; color:var(--dim); }
   .modes button.on { background:var(--accent); color:#17171b; font-weight:600; }
+  /* icon + label buttons: the glyph is injected into the <i> from icons.js */
+  button > i { display:inline-flex; line-height:0; vertical-align:-3px; margin-right:6px; }
+  #play { display:flex; align-items:center; justify-content:center; }
+  #play svg { margin-left:1px; }
+  .ico { display:inline-flex; align-items:center; justify-content:center; }
+  .rowh button { display:inline-flex; align-items:center; justify-content:center; }
+  .madd { display:flex; align-items:center; justify-content:center; }
   .modes button:hover:not(.on) { background:#2a2a33; color:var(--fg); }
   #zoom { width:120px; }
 
@@ -310,8 +332,8 @@
     <input id="pname" class="name" spellcheck="false" aria-label="Project name">
     <span id="pswitch"></span>
     <span class="sep"></span>
-    <button id="undo" class="ico" title="Undo (Cmd/Ctrl+Z)">↶</button>
-    <button id="redo" class="ico" title="Redo (Cmd/Ctrl+Shift+Z)">↷</button>
+    <button id="undo" class="ico" title="Undo (Cmd/Ctrl+Z)"></button>
+    <button id="redo" class="ico" title="Redo (Cmd/Ctrl+Shift+Z)"></button>
     <span class="grow"></span>
     <span id="status"></span>
     <span id="sizedd"></span>
@@ -322,11 +344,11 @@
 
   <div id="transport">
     <span class="modes">
-      <button id="mcrop" class="on" title="Drag the preview to pan inside a clip">Crop</button>
-      <button id="mframe" title="Drag to move and resize a clip's panel">Frame</button>
+      <button id="mcrop" class="on" title="Drag the preview to pan inside a clip"><i></i>Crop</button>
+      <button id="mframe" title="Drag to move and resize a clip's panel"><i></i>Frame</button>
     </span>
     <span class="grow"></span>
-    <button id="play">▶</button>
+    <button id="play"></button>
     <span class="tc"><span id="tnow">00:00:00</span> <small>/ <span id="ttot">00:00:00</span></small></span>
     <span class="grow"></span>
     <span style="color:var(--dim);font-size:11px">Zoom</span>
@@ -336,9 +358,9 @@
   <div id="grip" title="Drag to resize · double-click to reset"></div>
   <div id="tl">
     <div id="tlbar">
-      <button id="split" title="Split the selected clip at the playhead">Split</button>
-      <button id="dup" title="Duplicate the selected clip">Duplicate</button>
-      <button id="del" title="Delete the selected clip (Del)">Delete</button>
+      <button id="split" title="Split the selected clip at the playhead"><i></i>Split</button>
+      <button id="dup" title="Duplicate the selected clip"><i></i>Duplicate</button>
+      <button id="del" title="Delete the selected clip (Del)"><i></i>Delete</button>
       <span class="grow"></span>
       <span class="hint" style="margin:0" id="tlnote"></span>
     </div>
