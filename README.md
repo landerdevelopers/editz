@@ -137,9 +137,9 @@ Importing never touches the timeline — clips land in Media and you place them.
 - **Crop / Frame** above the timeline switches what dragging the preview does:
   Crop pans inside a clip, Frame moves and resizes its panel by the corner grips.
   Exact X/Y/W/H live in the Adjust panel.
-- **Output** sets the gap between panels, the padding around the edge, and the
-  background colour showing through both. They are independent, so panels can be
-  spaced apart with no border around the outside.
+- **Output** sets gap, padding and corner rounding, plus the background — a colour
+  or an uploaded image, cover-fitted behind the panels. Gap and padding are
+  independent, so panels can be spaced apart with no border around the outside.
 - **Drag a clip in the preview onto another grid slot** to move or swap it —
   empty slots included. The target slot is outlined while you drag.
 - **Drag inside one slot** to pan its crop, **scroll** to zoom. A drag that leaves
@@ -159,6 +159,19 @@ webm in and mp4 out directly — confirmed against
 `GET /v1/query/options/compress?input_format=webm&output_format=mp4`, which is
 also where the option names come from. Settings arriving from the browser are
 re-validated server-side against allowlists before they reach the API.
+
+## Performance
+
+A `<video>` element is a live decoder, not a cheap handle, so elements exist only
+for clips the playhead is near (±3s) and are released beyond a ceiling of eight.
+Creating one per clip up front is unnoticeable with small test files and crippling
+with 1080p screen recordings — twelve clips meant twelve simultaneous HD decoders.
+
+The preview also composites at a capped pixel count rather than the export size:
+filling 1920×1080 every frame to display it a few hundred pixels wide is wasted
+work. Export resets the scale to 1.
+
+Measured with twelve clips: decoders 15 → 4, and 0.13ms → 0.018ms per composite.
 
 ## Known ceiling
 

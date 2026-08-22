@@ -9,6 +9,29 @@ const FULL = [0, 0, 1, 1]
 const pool = new Map() // clip.id -> { video, srcId, gain }
 let audioCtx, streamDest
 
+// A <video> element is a live decoder, not a cheap handle. Creating one per clip
+// up front means a 12-clip timeline decodes 12 streams at once — unnoticeable with
+// small test files, crippling with 1080p screen recordings. So elements are made
+// only for clips the playhead is near, and distant ones are released.
+const NEAR = 3        // seconds either side to keep warm, so scrubbing stays smooth
+const MAX_WARM = 8    // hard ceiling on simultaneous decoders
+
+// Preview composites at a fraction of the export resolution: the canvas is shown
+// a few hundred pixels wide, so filling 1920x1080 every frame is wasted work.
+let scale = 1
+export const setScale = (k) => { scale = k }
+export const getScale = () => scale
+
+// Optional backdrop image behind the panels.
+let backdrop = null
+export function setBackdrop(url) {
+  if (!url) { backdrop = null; return }
+  const img = new Image()
+  img.onload = () => { backdrop = img }
+  img.onerror = () => { backdrop = null }
+  img.src = url
+}
+
 export const totalDur = (state) =>
   state.clips.reduce((m, c) => Math.max(m, c.start + c.dur), 0)
 
@@ -39,7 +62,7 @@ function mediaFor(state, clip) {
 
   const video = document.createElement('video')
   video.src = src.url
-  video.preload = 'auto'
+  video.preload = 'auto' // only near clips exist, so this is bounded
   video.playsInline = true
   document.getElementById('pool').append(video)
 
@@ -71,10 +94,27 @@ export function dropStale(state) {
   for (const id of [...pool.keys()]) if (!live.has(id)) dropClip(id)
 }
 
+const distance = (clip, t) => (t < clip.start ? clip.start - t : t - (clip.start + clip.dur))
+
+// Release decoders for clips the playhead has left behind, once there are more
+// warm than we allow. Furthest goes first.
+function evict(state, t) {
+  if (pool.size <= MAX_WARM) return
+  const warm = state.clips
+    .filter((c) => pool.has(c.id) && distance(c, t) > NEAR)
+    .sort((a, b) => distance(b, t) - distance(a, t))
+  for (const c of warm) {
+    if (pool.size <= MAX_WARM) break
+    dropClip(c.id)
+  }
+}
+
 // Keep every element's play state, position, and volume in step with the clock.
 export function sync(state, t, playing) {
   for (const clip of state.clips) {
-    const m = mediaFor(state, clip)
+    // Only spin up a decoder when the playhead is near; otherwise use one if it
+    // already exists, but don't create it.
+    const m = distance(clip, t) <= NEAR ? mediaFor(state, clip) : pool.get(clip.id)
     if (!m) continue
     const { video, gain } = m
     const live = t >= clip.start && t < clip.start + clip.dur
@@ -86,6 +126,7 @@ export function sync(state, t, playing) {
     if (playing && video.paused && want < video.duration) video.play().catch(() => {})
     if (!playing && !video.paused) video.pause()
   }
+  evict(state, t)
 }
 
 // Corner and edge grips, as fractions of the rect being framed.
@@ -99,8 +140,16 @@ export { panelBox }
 
 export function draw(ctx, state, t, highlightRect = null, frameRect = null) {
   const { w, h } = state.out
+  // Everything below is written in output coordinates; the transform maps them
+  // onto whatever the preview canvas actually is.
+  ctx.setTransform(scale, 0, 0, scale, 0, 0)
   ctx.fillStyle = state.bg || '#000000'
   ctx.fillRect(0, 0, w, h)
+  if (backdrop?.naturalWidth) {
+    // cover-fit, same rule the panels use
+    const c = coverRect(backdrop.naturalWidth, backdrop.naturalHeight, w, h)
+    ctx.drawImage(backdrop, c.sx, c.sy, c.sw, c.sh, 0, 0, w, h)
+  }
 
   // Sorted topmost-last by clipsAt, so plain array order gives correct z-order.
   for (const clip of clipsAt(state, t)) {
@@ -111,7 +160,17 @@ export function draw(ctx, state, t, highlightRect = null, frameRect = null) {
     const { video } = m
     // 9-arg drawImage crops and places in one call.
     const c = coverRect(video.videoWidth, video.videoHeight, dw, dh, clip)
-    ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, dx, dy, dw, dh)
+    const r = Math.min(state.radius ?? 0, dw / 2, dh / 2)
+    if (r > 0) {
+      ctx.save()
+      ctx.beginPath()
+      ctx.roundRect(dx, dy, dw, dh, r)
+      ctx.clip()
+      ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, dx, dy, dw, dh)
+      ctx.restore()
+    } else {
+      ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, dx, dy, dw, dh)
+    }
   }
 
   // Outline whatever is being dragged onto -- an occupied slot or an empty one.

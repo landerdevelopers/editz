@@ -47,6 +47,7 @@ const uid = () => Math.random().toString(36).slice(2, 9)
 // Written once when a clip is imported, not on every save — blobs are big.
 export const rememberFile = (id, file) => put(FILE(id), file)
 export const forgetFile = (id) => del(FILE(id))
+export const readFile = (id) => get(FILE(id))
 
 // ---- index ---------------------------------------------------------------
 
@@ -91,6 +92,8 @@ export function save(state, onError) {
         gap: pending.gap,
         pad: pending.pad,
         bg: pending.bg,
+        bgImg: pending.bgImg,
+        radius: pending.radius,
         out: pending.out,
         sel: pending.sel,
         xp: pending.xp,
@@ -115,7 +118,8 @@ export async function flush(state) {
   pending = src
   await put(DOC(src.id), {
     v: SCHEMA, id: src.id, title: src.title, updated: at,
-    clips: src.clips, grid: src.grid, gap: src.gap, pad: src.pad, bg: src.bg,
+    clips: src.clips, grid: src.grid, gap: src.gap, pad: src.pad,
+    radius: src.radius, bg: src.bg, bgImg: src.bgImg,
     out: src.out, sel: src.sel, xp: src.xp,
     sources: src.sources.map(({ url, ...rest }) => rest),
   })
@@ -149,7 +153,8 @@ export async function loadProject(id) {
   return {
     id: doc.id, title: doc.title, sources, clips,
     grid: doc.grid ?? null, gap: doc.gap ?? 0, pad: doc.pad ?? 0,
-    bg: doc.bg ?? '#000000', out: doc.out, sel: doc.sel, xp: doc.xp,
+    bg: doc.bg ?? '#000000', bgImg: doc.bgImg ?? null, radius: doc.radius ?? 0,
+    out: doc.out, sel: doc.sel, xp: doc.xp,
     lost: lost.size,
   }
 }
@@ -190,6 +195,7 @@ export async function gc() {
     for (const p of await listProjects()) {
       const doc = await get(DOC(p.id)).catch(() => null)
       for (const s of doc?.sources ?? []) live.add(FILE(s.id))
+      if (doc?.bgImg) live.add(FILE(doc.bgImg)) // backdrops are files too
     }
     for (const k of await keys()) {
       if (typeof k === 'string' && k.startsWith('f:') && !live.has(k)) await del(k)

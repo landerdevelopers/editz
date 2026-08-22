@@ -40,7 +40,9 @@ const BLANK = () => ({
   grid: null,
   gap: 0,
   pad: 0,
+  radius: 0,
   bg: '#000000',
+  bgImg: null, // id of a backdrop image in the file store
   // `auto` records the last name derived from the project title, so an untouched
   // filename keeps following it and a hand-set one doesn't.
   xp: { name: 'edit', auto: 'edit', mode: 'quality', crf: 21, mb: 25,
@@ -657,8 +659,6 @@ function panelOutput(p) {
   p.append(el('label', { textContent: 'Output' }))
   p.append(el('div', { className: 'hint', textContent:
     `${state.out.w}×${state.out.h} · ${fmt(R.totalDur(state))} · ${state.clips.length} clip(s)` }))
-  p.append(el('div', { className: 'hint', textContent:
-    'Export plays the timeline once, recording the canvas in realtime, then FreeConvert compresses it to MP4. Keep this tab visible while it records.' }))
 
   // Label, filled bar, and a number box that edits the same value both ways.
   // Rebuilding the panel mid-drag would replace the very input being dragged, so
@@ -680,37 +680,58 @@ function panelOutput(p) {
     p.append(el('div', { className: 'ctl' },
       [el('span', { className: 'ctl-label', textContent: labelText }), bar, num]))
   }
-  p.append(el('label', { textContent: 'Spacing' }))
+
+  p.append(el('label', { textContent: 'Layout' }))
   slider('Gap', 'gap', 160)
   slider('Padding', 'pad', 240)
+  slider('Corners', 'radius', 120)
 
   p.append(el('label', { textContent: 'Background' }))
-  const swatches = el('div', { style: 'display:flex;gap:6px;align-items:center' })
-  const pick = el('input', { type: 'color', value: state.bg,
-    style: 'width:44px;height:32px;padding:2px;cursor:pointer' })
-  pick.oninput = () => { state.bg = pick.value; drawPanel() }
+  const row = el('div', { className: 'bgrow' })
+  const pick = el('input', { type: 'color', value: state.bg, title: 'Custom colour' })
+  pick.oninput = () => { state.bg = pick.value; drawSwatches() }
   pick.onchange = persist
-  swatches.append(pick)
-  for (const c of ['#000000', '#ffffff', '#f2edb8', '#1b2338', '#c0392b']) {
-    const b = el('button', { title: c,
-      style: `width:24px;height:24px;padding:0;border-radius:6px;background:${c}` })
-    b.onclick = () => mutate(() => { state.bg = c })
-    swatches.append(b)
+  const swatches = el('div', { className: 'swatches' })
+  const drawSwatches = () => {
+    swatches.replaceChildren()
+    for (const c of ['#000000', '#ffffff', '#f2edb8', '#1b2338', '#c0392b']) {
+      const b = el('button', { title: c,
+        className: 'sw' + (state.bg.toLowerCase() === c && !state.bgImg ? ' on' : ''),
+        style: `background:${c}` })
+      b.onclick = () => mutate(() => { state.bg = c })
+      swatches.append(b)
+    }
   }
-  p.append(swatches)
-  p.append(el('div', { className: 'hint', textContent:
-    'Both show the background through. They are separate, so you can space the panels apart with no border around the outside.' }))
+  drawSwatches()
+  row.append(pick, swatches)
+  p.append(row)
 
-  p.append(el('label', { textContent: 'Saved project' }))
-  const used = el('div', { className: 'hint', textContent: 'checking storage…' })
+  // A backdrop image sits behind the panels, cover-fitted like the clips are.
+  const imgRow = el('div', { style: 'display:flex;gap:6px;margin-top:8px' })
+  const upload = el('button', { textContent: state.bgImg ? 'Replace image' : 'Use an image',
+    style: 'flex:1' })
+  upload.onclick = () => $('#bgfile').click()
+  imgRow.append(upload)
+  if (state.bgImg) {
+    const clear = el('button', { title: 'Remove the backdrop image', style: 'flex:0 0 auto' })
+    clear.innerHTML = icon('x', 15)
+    clear.onclick = () => mutate(() => {
+      state.bgImg = null
+      R.setBackdrop(null)
+    })
+    imgRow.append(clear)
+  }
+  p.append(imgRow)
+
+  p.append(el('label', { textContent: 'Storage' }))
+  const used = el('div', { className: 'hint', textContent: 'checking…' })
   p.append(used)
   store.usage().then((u) => {
     used.textContent = u
-      ? `${state.sources.length} clip(s) held on this device · ${bytes(u.used)} of ${bytes(u.quota)} used`
-      : `${state.sources.length} clip(s) held on this device`
+      ? `${state.sources.length} file(s) · ${bytes(u.used)} of ${bytes(u.quota)}`
+      : `${state.sources.length} file(s) on this device`
   })
-  p.append(el('div', { className: 'hint', textContent:
-    'Clips and edits are kept in this browser, so a refresh or a closed tab picks up where you left off.' }))
+
   const wipe = el('button', { textContent: 'Empty this project', style: 'margin-top:8px;width:100%' })
   wipe.onclick = async () => {
     if (!confirm(`Remove every clip from "${state.title}"? Other projects are untouched.`)) return
@@ -718,7 +739,7 @@ function panelOutput(p) {
     R.dropAll()
     // keep id, title and look; drop only the contents
     state = { ...BLANK(), id: state.id, title: state.title, out: state.out,
-              gap: state.gap, pad: state.pad, bg: state.bg, xp: state.xp }
+              gap: state.gap, pad: state.pad, radius: state.radius, bg: state.bg, xp: state.xp }
     undo.length = 0; redo.length = 0
     persist()
     await store.gc() // release files no project references any more
@@ -915,10 +936,18 @@ function paintRange(r) {
 const paintRanges = () => document.querySelectorAll('input[type=range]').forEach(paintRange)
 addEventListener('input', (e) => { if (e.target?.type === 'range') paintRange(e.target) }, true)
 
+// Preview canvas is capped by pixel count, not by dimension, so portrait and
+// landscape both land near the same cost. Export resets this to 1.
+const PREVIEW_PIXELS = 1280 * 720
+const previewScale = () =>
+  Math.min(1, Math.sqrt(PREVIEW_PIXELS / (state.out.w * state.out.h)))
+
 function ui() {
   closeDD()
-  canvas.width = state.out.w
-  canvas.height = state.out.h
+  const k = previewScale()
+  R.setScale(k)
+  canvas.width = Math.round(state.out.w * k)
+  canvas.height = Math.round(state.out.h * k)
   $('#undo').disabled = !undo.length
   $('#redo').disabled = !redo.length
   drawRail(); drawPanel(); drawTimeline(); drawSizeDD(); drawName(); drawSwitch()
@@ -972,6 +1001,7 @@ async function openProject(id) {
   await store.setCurrent(id)
   normalize()
   t = 0
+  await loadBackdrop()
   projects = await store.listProjects()
   ui()
   setStatus(`opened ${state.title}`)
@@ -982,6 +1012,7 @@ async function createProject() {
   for (const src of state.sources) URL.revokeObjectURL(src.url)
   R.dropAll()
   state = { ...BLANK(), id, title: 'Untitled project' }
+  R.setBackdrop(null)
   undo.length = 0; redo.length = 0
   t = 0
   projects = await store.listProjects()
@@ -1022,6 +1053,27 @@ function drawSwitch() {
 }
 
 $('#file').onchange = (e) => { addFiles([...e.target.files]); e.target.value = '' }
+$('#bgfile').onchange = async (e) => {
+  const f = e.target.files[0]
+  e.target.value = ''
+  if (!f) return
+  const id = uid()
+  try {
+    await store.rememberFile(id, f)
+  } catch (err) {
+    return setStatus(`couldn't save that image: ${err.message || err}`, true)
+  }
+  mutate(() => { state.bgImg = id })
+  R.setBackdrop(URL.createObjectURL(f))
+  setStatus(`backdrop set from ${f.name}`)
+}
+
+// Re-hydrate the backdrop whenever a project opens.
+async function loadBackdrop() {
+  if (!state.bgImg) return R.setBackdrop(null)
+  const file = await store.readFile(state.bgImg).catch(() => null)
+  R.setBackdrop(file ? URL.createObjectURL(file) : null)
+}
 $('#play').onclick = () => (playing ? pause() : play())
 const setMode = (m) => {
   mode = m
@@ -1330,6 +1382,8 @@ $('#xcrf').oninput = () => {
 }
 $('#xmb').oninput = () => { state.xp.mb = +$('#xmb').value }
 $('#xcancel').onclick = () => $('#xdlg').close()
+$('#xclose').innerHTML = icon('x', 17)
+$('#xclose').onclick = () => { if (!busy) $('#xdlg').close() }
 $('#xagain').onclick = () => { pane('xset'); drawDialog() }
 
 // Escape must not walk away from a recording that's still running.
@@ -1373,6 +1427,10 @@ $('#xgo').onclick = async () => {
     // recorder, and anything slow after that is captured as a frozen frame.
     await seek(0)
     await R.resume()
+    // Record at the real output size, not the preview's reduced one.
+    R.setScale(1)
+    canvas.width = state.out.w
+    canvas.height = state.out.h
 
     const { url, raw } = await R.exportVideo(canvas, state, async (dur) => {
       t = 0
@@ -1412,6 +1470,7 @@ $('#xgo').onclick = async () => {
   } finally {
     busy = false
     $('#go').disabled = false
+    ui() // restore the preview-sized canvas
   }
 }
 
@@ -1427,6 +1486,7 @@ $('#xgo').onclick = async () => {
     if (saved) {
       state = { ...BLANK(), ...saved, xp: { ...BLANK().xp, ...(saved.xp ?? {}) } }
       normalize() // an older project may predate the one-sequence-per-row rule
+      await loadBackdrop()
       setStatus(saved.lost
         ? `restored — ${saved.lost} clip(s) couldn't be recovered`
         : `restored ${state.sources.length} clip(s)`, !!saved.lost)
